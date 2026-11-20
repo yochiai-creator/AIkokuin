@@ -321,7 +321,7 @@
 <div class="sp-sub">読み込み中…</div></div>
 <script>window.SPLASH_T0 = Date.now();</script>
 <header>
-  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v5（速読＋精読で安く正確に）</span></h1>
+  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v6（タイムラプス・連続写真も読む）</span></h1>
   <span class="user" id="workerBadge"></span>
   <span class="user" id="user"></span>
   <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
@@ -429,7 +429,7 @@
         <button class="cambtn sub" id="btnVidPick" tabindex="-1">📂 選ぶ</button>
       </div>
       <input type="file" id="vidShoot" accept="video/*,image/*" capture="environment" class="hidden">
-      <input type="file" id="vidFile" accept="video/*,image/*" class="hidden">
+      <input type="file" id="vidFile" accept="video/*,image/*" multiple class="hidden">
       <div class="field" id="fldNum">
         <div class="lbl"><span>容器番号</span><span id="numHint">下3桁でOK（先頭の0は不要）</span></div>
         <div class="val" id="valNum"></div>
@@ -2189,9 +2189,10 @@
   }
 
   // ---------- 刻印の読み取り（動画・写真） ----------
-  // iPadで撮った動画（または写真）を、画面の中でコマに分けて容器ごとに読み、一覧で確かめてまとめて保存する。
+  // iPadで撮った動画（タイムラプス＝インターバル撮影も）・写真（連続写真も）を、画面の中でコマに分けて容器ごとに読み、一覧で確かめてまとめて保存する。
   // ※ Apps Script の画面は Google の枠の中で動くため、iPad ではカメラ映像を直接使えない（NotAllowedError）。だから「撮ってから読む」。
-  //  1) コマ選び: 0.25秒ごとにコマを見て、場面（容器）が替わるところで区切り、各場面で一番くっきりしたコマを選ぶ
+  //  1) コマ選び: 動画は再生しながら全コマを（タイムラプスも取りこぼさない）、写真は撮った順に1枚ずつ調べ、
+  //     場面（容器）が替わるところで区切って、各場面で一番くっきりしたコマを選ぶ
   //  2) 速読: 選んだコマを1枚ずつ安いモデルで読む（readKokuin tier=fast）
   //  3) まとめ: 時刻順に並べ、同じ番号が続いたコマを1本の容器にまとめる
   //  4) 確定: 2コマ以上で番号・Wが一致し、W検算OK、キャップのグループNoも一致（キャップが見えなければ3コマ以上一致）なら速読だけで確定
@@ -2199,9 +2200,10 @@
   //  6) 一覧で写真（タップで拡大）と読みを確かめ、チェックした分を刻印のWで保存（「刻印記録」に video / photo で残す）
   // 読み取りのきまりは共有ドライブ「刻印読み取り_運用一式」の共通ルールに合わせている（gas/Kokuin.js）。
   const VID = {
-    STEP: 0.25,        // コマを見る間隔（秒）
+    SCAN_MAX: 2400,    // 動画で調べるコマ数の上限（これを超える長い動画は間引いて調べる）
+    SEEK_STEP: 0.25,   // 再生しながら調べられないときに、移動して調べる間隔（秒）
     MOVED: 14,         // 場面が替わったとみなす差（48×36の白黒で、1画素あたりの平均の差）
-    MAX_FRAMES: 200,   // 1本の動画で速読するコマの上限
+    MAX_FRAMES: 200,   // 1回で速読するコマの上限
     PARALLEL: 3,       // 同時に読む数
     PRECISE_FRAMES: 3, // 精読で1本に使うコマ数
     MAX_SIDE: 1568,    // 送る画像の長い辺（Claude はこれより大きい画像を縮めて読む）
@@ -2265,22 +2267,27 @@
   function vidButtons(o) { ['btnVidSave', 'btnVidAll', 'btnVidStop'].forEach(function(id) { $(id).classList.toggle('hidden', !o[id]); }); }
   function yen(usd) { return Math.max(1, Math.round(usd * VID.YEN_PER_USD)); }
 
-  function vidOpen(file) {
-    if (!file) return;
+  // files: 動画1本、または写真（1枚〜インターバル撮影の連続写真）
+  function vidOpen(files) {
+    files = Array.prototype.slice.call(files || []);
+    if (!files.length) return;
     if (S.stage !== 'num') resetEntry('容器番号を入力', 'info');
     vidReset();
-    V.stop = false; V.how = /^image\//.test(file.type) ? 'photo' : 'video';
+    const video = files.filter(function(f) { return /^video\//.test(f.type); })[0];
+    const photos = files.filter(function(f) { return /^image\//.test(f.type); });
+    V.stop = false; V.how = video ? 'video' : 'photo';
     $('vidPanel').classList.remove('hidden'); $('vidList').innerHTML = '';
     vidButtons({ btnVidStop: true }); vidBar(0);
-    vidMsg(V.how === 'photo' ? '写真を読み込んでいます…' : '動画を読み込んでいます…');
-    const start = V.how === 'photo' ? photoLoad(file) : vidLoad(file).then(vidScan);
-    start.then(function() { if (!V.stop) return vidRead(); })
+    vidMsg(video ? '動画を読み込んでいます…' : '写真 ' + photos.length + ' 枚を読み込んでいます…');
+    const start = video ? vidLoad(video).then(vidScan) : photosScan(photos);
+    start.then(function(frames) { if (!V.stop) { pickScenes(frames); return vidRead(); } })
       .catch(function(e) { vidButtons({}); vidMsg('読めませんでした: ' + (e && e.message || e), 'err'); });
   }
   function vidReset() {
     V.stop = true; V.running = false;
     if (V.url) { try { URL.revokeObjectURL(V.url); } catch (e) { /* 無視 */ } }
-    V.video = null; V.img = null; V.url = ''; V.picks = []; V.reads = []; V.items = []; V.cost = 0; V.nFast = 0; V.nPrecise = 0;
+    if (V.video && V.video.parentNode) V.video.parentNode.removeChild(V.video);
+    V.video = null; V.url = ''; V.picks = []; V.reads = []; V.items = []; V.cost = 0; V.nFast = 0; V.nPrecise = 0;
   }
   function vidClose() { vidReset(); $('vidPanel').classList.add('hidden'); render(); }
 
@@ -2293,19 +2300,21 @@
     });
   }
   function vidSeek(v, t) { const p = waitEvent(v, 'seeked', 4000); v.currentTime = t; return p; }
-
-  function photoLoad(file) {
+  function loadImage(file) {
     return new Promise(function(resolve, reject) {
-      const img = new Image();
-      V.url = URL.createObjectURL(file);
-      img.onload = function() { V.img = img; V.picks = [{ t: 0, sharp: 0 }]; resolve(); };
-      img.onerror = function() { reject(new Error('写真を開けません')); };
-      img.src = V.url;
+      const url = URL.createObjectURL(file), img = new Image();
+      img.onload = function() { resolve(img); setTimeout(function() { URL.revokeObjectURL(url); }, 0); };
+      img.onerror = function() { URL.revokeObjectURL(url); reject(new Error('写真を開けません: ' + file.name)); };
+      img.src = url;
     });
   }
+
   function vidLoad(file) {
     const v = document.createElement('video');
     v.muted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto';
+    // 画面の外に置く（iPadでは画面に置かないとコマの知らせ requestVideoFrameCallback が来ないことがある）
+    v.style.cssText = 'position:fixed;left:-10px;top:0;width:2px;height:2px;opacity:0;pointer-events:none';
+    document.body.appendChild(v);
     V.url = URL.createObjectURL(file); V.video = v;
     v.src = V.url;
     return waitEvent(v, 'loadeddata', 15000).then(function() {
@@ -2322,9 +2331,9 @@
 
   // 縮小した白黒の写し（場面の区切り用）と、中央部のくっきり具合（ラプラシアンの分散）
   const vidCanvas = document.createElement('canvas'); vidCanvas.width = 160; vidCanvas.height = 120;
-  function frameStats(v) {
+  function frameStats(src) {
     const g = vidCanvas.getContext('2d', { willReadFrequently: true });
-    g.drawImage(v, 0, 0, 160, 120);
+    g.drawImage(src, 0, 0, 160, 120);
     const d = g.getImageData(0, 0, 160, 120).data, gray = new Float32Array(160 * 120);
     for (let i = 0; i < gray.length; i++) gray[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
     const sig = new Array(48 * 36);
@@ -2341,38 +2350,92 @@
     return { sig: sig, sharp: sum2 / n - (sum / n) * (sum / n) };
   }
 
-  // 1) コマ選び: 場面の最初のコマから差が VID.MOVED 以上になったら次の場面。各場面で一番くっきりしたコマ
+  // 動画のコマを調べる。タイムラプス（インターバル撮影）は1本の容器が数コマしか写らないので、
+  // 再生しながら全コマを調べる（requestVideoFrameCallback）。使えない環境では移動しながら調べる
   function vidScan() {
     const v = V.video, dur = v.duration;
     if (!isFinite(dur) || dur <= 0) throw new Error('動画の長さが分かりません');
+    if (typeof v.requestVideoFrameCallback === 'function') {
+      return scanPlay(v, dur).then(function(frames) { return frames.length >= 2 ? frames : scanSeek(v, dur); });
+    }
+    return scanSeek(v, dur);
+  }
+  function scanPlay(v, dur) {
+    return new Promise(function(resolve) {
+      const frames = [], gap = dur / VID.SCAN_MAX;   // 長い動画は間引く
+      let last = -1, done = false, idle = null;
+      const finish = function() { if (done) return; done = true; clearTimeout(idle); v.pause(); v.playbackRate = 1; resolve(frames); };
+      const watchdog = function() { clearTimeout(idle); idle = setTimeout(finish, 5000); };   // 再生が止まったら打ち切る
+      const onFrame = function(now, meta) {
+        if (done) return;
+        if (V.stop) return finish();
+        const t = meta && typeof meta.mediaTime === 'number' ? meta.mediaTime : v.currentTime;
+        if (t - last >= gap) {
+          const st = frameStats(v); st.t = t; frames.push(st); last = t;
+          if (frames.length % 20 === 0) { vidBar(t / dur * 0.3); vidMsg('コマを調べています… ' + Math.round(t) + ' / ' + Math.round(dur) + ' 秒（' + frames.length + ' コマ）'); }
+        }
+        watchdog();
+        if (!v.ended) v.requestVideoFrameCallback(onFrame);
+      };
+      v.addEventListener('ended', finish);
+      // 短い動画（タイムラプスなど）はふつうの速さで全コマを、長い動画は2倍速で
+      v.playbackRate = dur <= 40 ? 1 : 2;
+      vidSeek(v, 0).then(function() {
+        v.requestVideoFrameCallback(onFrame);
+        watchdog();
+        const p = v.play(); if (p && p.catch) p.catch(finish);
+      });
+    });
+  }
+  function scanSeek(v, dur) {
+    const step = Math.max(1 / 30, Math.min(VID.SEEK_STEP, dur / VID.SCAN_MAX));
     const times = [];
-    for (let t = Math.min(0.1, dur / 2); t < dur; t += VID.STEP) times.push(t);
+    for (let t = Math.min(0.05, dur / 2); t < dur; t += step) times.push(t);
     const frames = []; let i = 0;
-    const step = function() {
-      if (V.stop || i >= times.length) return Promise.resolve();
+    const next = function() {
+      if (V.stop || i >= times.length) return Promise.resolve(frames);
       const t = times[i++];
       return vidSeek(v, t).then(function() {
         const st = frameStats(v); st.t = t; frames.push(st);
-        if (i % 8 === 0) { vidBar(i / times.length * 0.3); vidMsg('コマを選んでいます… ' + Math.round(dur * i / times.length) + ' / ' + Math.round(dur) + ' 秒'); }
-        return step();
+        if (i % 8 === 0) { vidBar(i / times.length * 0.3); vidMsg('コマを調べています… ' + Math.round(t) + ' / ' + Math.round(dur) + ' 秒'); }
+        return next();
       });
     };
-    return step().then(function() {
-      const picks = []; let anchor = null, best = null;
-      frames.forEach(function(f) {
-        if (!anchor || sigDiff(f.sig, anchor.sig) >= VID.MOVED) { if (best) picks.push(best); anchor = f; best = f; }
-        else if (f.sharp > best.sharp) best = f;
-      });
-      if (best) picks.push(best);
-      V.picks = picks.slice(0, VID.MAX_FRAMES).map(function(p) { return { t: p.t, sharp: p.sharp }; });
-      V.overflow = picks.length > VID.MAX_FRAMES;
-      if (!V.picks.length) throw new Error('読めそうなコマがありません');
-    });
+    return next();
   }
 
-  // コマを画像にする（動画はその時刻へ移動してから）
+  // 写真（インターバル撮影の連続写真も）: 撮った順（時刻→名前）に並べ、1枚ずつ調べる（写真は読み取りのときにまた開く）
+  function photosScan(files) {
+    files = files.slice().sort(function(a, b) { return (a.lastModified - b.lastModified) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0); });
+    const frames = []; let i = 0;
+    const next = function() {
+      if (V.stop || i >= files.length) return Promise.resolve(frames);
+      const f = files[i++];
+      return loadImage(f).then(function(img) {
+        const st = frameStats(img); st.t = i; st.file = f; frames.push(st);
+        vidBar(i / files.length * 0.3); vidMsg('写真を調べています… ' + i + ' / ' + files.length + ' 枚');
+        return next();
+      });
+    };
+    return next();
+  }
+
+  // 場面に分ける: 場面の最初のコマから差が VID.MOVED 以上になったら次の場面。各場面で一番くっきりしたコマを選ぶ
+  function pickScenes(frames) {
+    const picks = []; let anchor = null, best = null;
+    frames.forEach(function(f) {
+      if (!anchor || sigDiff(f.sig, anchor.sig) >= VID.MOVED) { if (best) picks.push(best); anchor = f; best = f; }
+      else if (f.sharp > best.sharp) best = f;
+    });
+    if (best) picks.push(best);
+    V.picks = picks.slice(0, VID.MAX_FRAMES).map(function(p) { return { t: p.t, sharp: p.sharp, file: p.file }; });
+    V.overflow = picks.length > VID.MAX_FRAMES;
+    if (!V.picks.length) throw new Error('読めそうなコマがありません');
+  }
+
+  // コマを画像にする（動画はその時刻へ移動、写真は開き直して）
   function grabPick(p) {
-    if (V.img) return Promise.resolve({ image: grabJpeg(V.img, V.img.naturalWidth, V.img.naturalHeight), thumb: thumbOf(V.img, V.img.naturalWidth, V.img.naturalHeight) });
+    if (p.file) return loadImage(p.file).then(function(img) { return { image: grabJpeg(img, img.naturalWidth, img.naturalHeight), thumb: thumbOf(img, img.naturalWidth, img.naturalHeight) }; });
     const v = V.video;
     return vidSeek(v, p.t).then(function() { return { image: grabJpeg(v, v.videoWidth, v.videoHeight), thumb: thumbOf(v, v.videoWidth, v.videoHeight) }; });
   }
@@ -2499,7 +2562,7 @@
         '<input type="checkbox" data-i="' + i + '"' + (it.checked ? ' checked' : '') + (it.canSave && !it.saved ? '' : ' disabled') + '>' +
         '<img src="' + it.thumb + '" alt="">' +
         '<div><div><span class="num">' + esc(name) + '</span>' + (r.tare_kg ? '<span class="w">W' + esc(r.tare_kg) + (r.w_from_seal ? '（シールから）' : '') + '</span>' : '') + '</div>' +
-        '<div class="meta">' + esc(kokuinText(r)) + '　' + how + (V.how === 'video' ? '　' + it.t.toFixed(1) + '秒' : '') + (r.note ? '<br>' + esc(r.note) : '') + '</div>' +
+        '<div class="meta">' + esc(kokuinText(r)) + '　' + how + (V.how === 'video' ? '　' + it.t.toFixed(1) + '秒' : V.picks.length > 1 ? '　' + it.t + '枚目' : '') + (r.note ? '<br>' + esc(r.note) : '') + '</div>' +
         '<div class="st ' + st[1] + '">' + esc(st[0]) + '</div></div></div>';
     }).join('');
     const n = V.items.filter(function(it) { return it.checked && !it.saved; }).length;
@@ -2551,9 +2614,9 @@
   $('btnVidPick').onclick = function() { this.blur(); $('vidFile').value = ''; $('vidFile').click(); };
   // ホーム画面からも撮れる（撮ったら入力画面を開いて読む）
   function onShot(input) {
-    const f = input.files && input.files[0]; if (!f) return;
-    if ($('entry').classList.contains('hidden')) startEntry($('btnStartCam'), function() { vidOpen(f); });
-    else vidOpen(f);
+    const fs = Array.prototype.slice.call(input.files || []); if (!fs.length) return;
+    if ($('entry').classList.contains('hidden')) startEntry($('btnStartCam'), function() { vidOpen(fs); });
+    else vidOpen(fs);
   }
   $('vidShoot').onchange = function() { onShot(this); };
   $('vidFile').onchange = function() { onShot(this); };

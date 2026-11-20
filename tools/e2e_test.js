@@ -1393,6 +1393,18 @@ function check(name, ok, detail) {
     await pv.click('#btnVidSave'); await pv.waitForTimeout(1200);
     const kv2 = ks.getRange(2, 1, ks.getLastRow() - 1, 23).getValues();
     check('写真: 保存して刻印記録に「photo」で残す', c.getLot(L.lotId).entries['52015'] === 16.7 && kv2[kv2.length - 1][11] === 'photo');
+    // インターバル撮影の連続写真: 撮った順に並べ、同じ場面（赤・赤）は1コマにまとめて、場面ごとに読む
+    await pv.click('#btnVidClose'); await pv.waitForTimeout(200);
+    global.CLAUDE_REQS = [];
+    global.CLAUDE_REPLIES = [reply({ number: '52021' }), reply({ number: '52022' }), reply({ number: '52021' }), reply({ number: '52022' })];
+    const shots = await pv.evaluate(() => ['#cc2222', '#cc2222', '#2222cc'].map(col => {
+      const cv = document.createElement('canvas'); cv.width = 400; cv.height = 300; const g = cv.getContext('2d'); g.fillStyle = col; g.fillRect(0, 0, 400, 300);
+      return cv.toDataURL('image/jpeg').split(',')[1];
+    }));
+    await pv.setInputFiles('#vidFile', shots.map((b, i) => ({ name: 'IMG_' + (100 + i) + '.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(b, 'base64') })));
+    for (let i = 0; i < 40 && !(await pv.isVisible('#btnVidSave')); i++) await pv.waitForTimeout(250);
+    const srow = await pv.$$eval('.vid-row', els => els.map(e => e.textContent));
+    check('連続写真: 3枚から2場面を選んで読み、2本の一覧（何枚目かも出す）', global.CLAUDE_REQS.length === 4 && srow.length === 2 && srow[0].includes('52021') && srow[0].includes('1枚目') && srow[1].includes('52022') && srow[1].includes('3枚目'), JSON.stringify(srow) + ' reqs=' + global.CLAUDE_REQS.length);
     await pv.close();
   }
   await browser.close();
