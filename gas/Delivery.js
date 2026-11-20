@@ -340,7 +340,7 @@ function buildLotCsv_(lot, logRows) {
 // ---------- 取引先用の質量データ（v128） ----------
 // まとめて送信したロットの容器を「記号＋容器番号＋質量（点なし3桁）」1つの値で、容器区分ごとのシートに書き足す（例 HEP80001347）
 // 欠番は「HEP80002欠番」、修正（品質不良）・底黒・未入力は入れない。同じロットを送り直したら前の分を消して書き直す
-const CUSTOMER_SS_NAME = 'LPG容器 神鋼機器用 質量データ';   // v132: 取引先用 → 神鋼機器用
+const CUSTOMER_SS_NAME = 'AI刻印 神鋼機器用 質量データ';   // v132: 取引先用 → 神鋼機器用
 // 年ごとのファイル（LPG容器 取引先用 質量データ_2026）。1ファイル1,000万マスまでなので、年で分けて1列だけにする（v131）
 function customerSpreadsheet_(year) {
   year = String(year || Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy'));

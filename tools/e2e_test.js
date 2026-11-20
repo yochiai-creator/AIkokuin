@@ -262,7 +262,7 @@ function check(name, ok, detail) {
   check('完了ではメールを送らない', global.MAILS.length === 0);
   check('完了してPDFを保存したら成績表シートを消す', !ss.getSheetByName('成績表_HEP37001-37100'));
   { const y = String(new Date().getFullYear()), mo = ('0' + (new Date().getMonth() + 1)).slice(-2);
-    check('PDFは年・月・機種のフォルダに保存', global.PDFS.some(p => p === '/LPG容器 質量入力/成績表PDF/' + y + '年/' + mo + '月/50kg/成績表_HEP37001-37100.pdf'), global.PDFS.join(',')); }
+    check('PDFは年・月・機種のフォルダに保存', global.PDFS.some(p => p === '/AI刻印 質量入力/成績表PDF/' + y + '年/' + mo + '月/50kg/成績表_HEP37001-37100.pdf'), global.PDFS.join(',')); }
   check('シートを消した完了ロットも入力状況は入力記録から出る', Object.keys(ctx.getBootstrap().recentDone.find(l => l.lotId === 'HEP37001').entries).length >= 15);
 
   // ---- 全数そろったら知らせる（自動で完了しない）
@@ -473,7 +473,7 @@ function check(name, ok, detail) {
     const rest = lg.getRange(2, 1, lg.getLastRow() - 1, 18).getValues();
     check('整理: 入力中のロットの記録は残す', rest.length === 1 && rest[0][2] === B.lotId && rest[0][4] === 'AR00201');
     const ar = global.ARCHIVES[0], ash = ar && ar.getSheets()[0];
-    check('整理: 終わったロットは「LPG容器 入力記録_去年」へ移す', ar && ar.name === 'LPG容器 入力記録_' + (y - 1) && ash.getLastRow() === 3 && ash.getRange(2, 5).getValue() === 'AR00101' && ash.getRange(2, 7).getValue() === '101');
+    check('整理: 終わったロットは「AI刻印 入力記録_去年」へ移す', ar && ar.name === 'AI刻印 入力記録_' + (y - 1) && ash.getLastRow() === 3 && ash.getRange(2, 5).getValue() === 'AR00101' && ash.getRange(2, 7).getValue() === '101');
     check('整理: 移し終えたら次の年まで動かない', P.getProperty('LOG_ARCHIVE_DONE') === String(y - 1) && c.runMaintenance().archived === 0);
     const csv = c.buildLotCsv_(c.findLot_(A.lotId)).content || '';
     check('整理: 移したロットの再送信用CSVも作れる', String(csv).includes('"AR00101","101","16.7"'), String(csv).slice(0, 200));
@@ -534,8 +534,8 @@ function check(name, ok, detail) {
       check('採番表: 削除したロット・取り消した入力は載せず、その人は作業者に出さない', r2.count === 252 && !h2.includes('DEL00101') && !h2.includes('石井') && h2.includes('作業者：<b>山崎・田中</b>'), r2.count); }
     check('採番表PDF: 修正（品質不良）とダブりは載せない', !html.includes('>' + freeS + '<') && !html.includes('修正</span>') && !html.includes('>W<'));
     const d = today.split('-');
-    check('採番表PDF: 保存先は 採番表/年/月', !!key && key.startsWith('/LPG容器 質量入力/採番表/' + d[0] + '年/' + d[1] + '月/'), key);
-    const sss = global.ARCHIVES.find(x => x.name === 'LPG容器 採番表_' + d[0] + '-' + d[1]), ssh = sss && sss.getSheets()[0];
+    check('採番表PDF: 保存先は 採番表/年/月', !!key && key.startsWith('/AI刻印 質量入力/採番表/' + d[0] + '年/' + d[1] + '月/'), key);
+    const sss = global.ARCHIVES.find(x => x.name === 'AI刻印 採番表_' + d[0] + '-' + d[1]), ssh = sss && sss.getSheets()[0];
     const srows = ssh ? ssh.getRange(2, 1, ssh.getLastRow() - 1, 10).getValues() : [];
     check('採番表シート: 月ごとのスプレッドシート（採番表/年/）に1行1本で書き足す', ssh && ssh.getName() === '採番表' && srows.length === 252 && srows[0][0] === today && srows[0][1] === 1 && srows[0][2] === 'HXF' && srows[0][3] === order[0] && srows[250][1] === 251 && srows[250][3] === fixS && srows[250][8] === '' && srows[251][2] === 'HEP' && srows[251][4] === '50kg' && srows[251][1] === 1 && srows[251][5] === 598, JSON.stringify(srows[0]) + JSON.stringify(srows[250]));
     check('採番表シート: 置き場所は 採番表/年 フォルダ', sss && sss.fo && sss.fo.parent.name === d[0] + '年' && sss.fo.parent.parent.name === '採番表');
@@ -557,20 +557,20 @@ function check(name, ok, detail) {
     check('時刻の列のない採番表を作り直す（1回だけ）', redo1 === 0 && global.PDFBLOBS[key] !== pdfBefore && c.sharedProps_().getProperty('SAIBAN_REDONE_VER') === 'v79' && c.saibanRedoStep_() === 0, JSON.stringify([redo1, global.PDFBLOBS[key] !== pdfBefore, c.sharedProps_().getProperty('SAIBAN_REDONE_VER')]));
     check('毎晩の自動処理: その日の採番表PDFを作る', global.PDFBLOBS[key] !== beforeBlob && global.PDFS.filter(p => p.endsWith('/採番表_' + today + '.pdf')).length === 1 && c.sharedProps_().getProperty('SAIBAN_DONE_UNTIL') === today);
   }
-  // ---- ドライブのフォルダを「LPG容器 質量入力」に全部まとめる（v52までの並びからの整理）
+  // ---- ドライブのフォルダを「AI刻印 質量入力」に全部まとめる（v52までの並びからの整理）
   {
     const m = load(), c = m.ctx, P = c.sharedProps_();
-    const old = c.DriveApp.createFolder('LPG容器 検査成績表PDF');
+    const old = c.DriveApp.createFolder('AI刻印 検査成績表PDF');
     P.setProperty('PDF_FOLDER_ID', old.getId());
     old.createFolder('2026年').createFolder('09月').createFile({ name: '成績表_HEP59701-59800.pdf' });
     old.createFile({ name: '成績表_HRH00001-00100.pdf' });
     old.createFolder('採番表').createFolder('2026年').createFolder('09月').createFile({ name: '採番表_2026-09-27.pdf' });
-    const sa = c.SpreadsheetApp.create('LPG容器 採番表_2026'); c.DriveApp.getFileById(sa.getId());
+    const sa = c.SpreadsheetApp.create('AI刻印 採番表_2026'); c.DriveApp.getFileById(sa.getId());
     c.ensureFolderLayout_();
     const names = f => f.kids.map(k => k.name).sort().join(',');
-    check('フォルダ整理: 名前を「LPG容器 質量入力」に', old.getName() === 'LPG容器 質量入力' && names(old) === '入力記録（過去分）,成績表PDF,採番表', names(old));
+    check('フォルダ整理: 名前を「AI刻印 質量入力」に', old.getName() === 'AI刻印 質量入力' && names(old) === '入力記録（過去分）,成績表PDF,採番表', names(old));
     const paths = global.PDFS.filter(p => p.endsWith('.pdf')).sort().join(' | ');
-    check('フォルダ整理: 成績表PDFは「成績表PDF/年/月」、採番表はそのまま', paths === '/LPG容器 質量入力/成績表PDF/2026年/09月/成績表_HEP59701-59800.pdf | /LPG容器 質量入力/成績表PDF/成績表_HRH00001-00100.pdf | /LPG容器 質量入力/採番表/2026年/09月/採番表_2026-09-27.pdf', paths);
+    check('フォルダ整理: 成績表PDFは「成績表PDF/年/月」、採番表はそのまま', paths === '/AI刻印 質量入力/成績表PDF/2026年/09月/成績表_HEP59701-59800.pdf | /AI刻印 質量入力/成績表PDF/成績表_HRH00001-00100.pdf | /AI刻印 質量入力/採番表/2026年/09月/採番表_2026-09-27.pdf', paths);
     check('フォルダ整理: 1回だけ', P.getProperty('FOLDER_LAYOUT') === '1' && c.ensureFolderLayout_() === false);
     // 月フォルダ直下の古いPDFを機種のフォルダへ
     const mf = old.kids.find(k => k.name === '成績表PDF').kids.find(k => k.name === '2026年').kids.find(k => k.name === '09月');
@@ -578,39 +578,39 @@ function check(name, ok, detail) {
     c.createLot({ prefix: 'HXF', start: '74101', kind: '20kg' });
     const lr = c.findLot_('HXF74101').row; m.ss.getSheetByName('ロット').getRange(lr, 14).setValue('https://drive.google.com/file/d/' + fid + '/view');
     c.ensurePdfKindFolders_();
-    check('機種フォルダ: 月フォルダ直下の成績表PDFを機種のフォルダへ移す', global.PDFS.includes('/LPG容器 質量入力/成績表PDF/2026年/09月/20kg/成績表_HXF74101-74200.pdf'), global.PDFS.join(' | '));
+    check('機種フォルダ: 月フォルダ直下の成績表PDFを機種のフォルダへ移す', global.PDFS.includes('/AI刻印 質量入力/成績表PDF/2026年/09月/20kg/成績表_HXF74101-74200.pdf'), global.PDFS.join(' | '));
     const r = c.getPdfMonthFolder_(new Date());
     check('フォルダ整理のあと: 成績表PDFは 成績表PDF/年/月 に入る', r.parent.parent.name === '成績表PDF');
   }
   // ---- 同じ名前のまとめ先フォルダが2つできたときの統合（旧URLと今のURLでプロジェクトが別だったため）
   {
     const m = load(), c = m.ctx;
-    const a = c.DriveApp.createFolder('LPG容器 質量入力');                 // 古い方（本物）
+    const a = c.DriveApp.createFolder('AI刻印 質量入力');                 // 古い方（本物）
     a.createFolder('成績表PDF').createFolder('2026年').createFolder('09月').createFolder('50kg').createFile({ name: '成績表_HEP59701-59800.pdf' });
     a.createFolder('採番表').createFolder('2026年').createFolder('09月').createFile({ name: '採番表_2026-09-27.pdf' });
-    const b = c.DriveApp.createFolder('LPG容器 質量入力');                 // 22時に新しくできた方
+    const b = c.DriveApp.createFolder('AI刻印 質量入力');                 // 22時に新しくできた方
     const bs = b.createFolder('採番表');
     const b9 = bs.createFolder('2026年').createFolder('09月');
     b9.createFile({ name: '採番表_2026-09-27.pdf' }); b9.createFile({ name: '採番表_2026-09-28.pdf' });
-    const sa = c.SpreadsheetApp.create('LPG容器 採番表_2026'); c.DriveApp.getFileById(sa.getId()).moveTo(bs);
+    const sa = c.SpreadsheetApp.create('AI刻印 採番表_2026'); c.DriveApp.getFileById(sa.getId()).moveTo(bs);
     c.DriveApp.getFileById(m.ss.getId()).moveTo(b);
     check('統合前: 保存先が決まっていなければ一番古いフォルダを使う', c.getPdfFolder_().getId() === a.getId());
     c.mergeRootFolders_();
-    const live = global.DRIVE_ROOT.kids.filter(k => k.name === 'LPG容器 質量入力');
+    const live = global.DRIVE_ROOT.kids.filter(k => k.name === 'AI刻印 質量入力');
     const paths = global.PDFS.sort().join(' | ');
     check('統合: 古い方の1つにまとまる', live.length === 1 && live[0] === a && b.trashed === true);
-    check('統合: 同じ名前のPDFは新しい方を残し、無い方はそのまま移す', paths.includes('/LPG容器 質量入力/採番表/2026年/09月/採番表_2026-09-28.pdf') &&
+    check('統合: 同じ名前のPDFは新しい方を残し、無い方はそのまま移す', paths.includes('/AI刻印 質量入力/採番表/2026年/09月/採番表_2026-09-28.pdf') &&
       global.PDFS.filter(p => p.endsWith('採番表_2026-09-27.pdf')).length === 1 && paths.includes('/成績表PDF/2026年/09月/50kg/成績表_HEP59701-59800.pdf'), paths);
-    check('統合: 採番表のスプレッドシートと記録用スプレッドシートも移る', paths.includes('/LPG容器 質量入力/採番表/LPG容器 採番表_2026') && sa.fo.parent.parent === a && m.ss.fo.parent === a);
+    check('統合: 採番表のスプレッドシートと記録用スプレッドシートも移る', paths.includes('/AI刻印 質量入力/採番表/AI刻印 採番表_2026') && sa.fo.parent.parent === a && m.ss.fo.parent === a);
     check('統合: 保存先は記録用スプレッドシートの隠しシートに入る（旧URLのプロジェクトとも共有）', m.ss.getSheetByName('_システム').getRange(2, 1, m.ss.getSheetByName('_システム').getLastRow() - 1, 2).getValues().some(r => r[0] === 'PDF_FOLDER_ID' && r[1] === a.getId()));
     check('統合のあと: 採番表のスプレッドシートは名前で見つけて使う（作り直さない）', c.saibanSheet_('2026').getParent() === sa && global.ARCHIVES.length === 1);
   }
-  // ---- 旧URL（別プロジェクト）は新しいURLへ案内するだけ
+  // ---- 旧URL案内: このコピーでは MAIN_SCRIPT_ID が空なので、どのプロジェクトでも入力画面を出す（本番のURLへ案内しない）
   {
     const m = load(), c = m.ctx;
     check('今のプロジェクトでは入力画面を出す', c.isOldProject_() === false);
     global.SCRIPT_ID = '1WRdps6zQgFVtqMeW9OhRvLeZGafuOCXFZkv-89skSv6WJ0atLhBZnSfG';
-    check('旧プロジェクトでは案内画面にする', c.isOldProject_() === true && c.movedPageHtml_().includes('AKfycbyDM2IQ8NY6LgQpLb0gpQoK32fAQtWVBrdBQduZ6FOBWREFn61Qb55R9Q20Y4u9IfQ5/exec'));
+    check('MAIN_SCRIPT_ID が空なら別プロジェクトでも案内画面にしない（本番URLへ飛ばさない）', c.isOldProject_() === false);
     delete global.SCRIPT_ID;
   }
   // ---- 標準質量に 10kg・30kg把手（初期値のままの設定は置き換える）
@@ -1258,6 +1258,121 @@ function check(name, ok, detail) {
     const out = c.recordEntries(list);
     const lg = m.ss.getSheetByName('入力記録'), rows = lg.getRange(2, 1, lg.getLastRow() - 1, 18).getValues().filter(r => r[2] === C.lotId);
     check('まとめて保存: 100本目で全数の知らせ（完了はしない）、その後の入力も入る', out.results.length === 101 && out.results[99].full === true && !out.results[99].completed && !out.results.slice(0, 99).some(r => r.full) && !out.error && rows.length === 101 && c.findLot_(C.lotId).status === '入力中', out.error + ' ' + rows.length);
+  }
+  // ---- 刻印の読み取り（カメラ映像 → readKokuin → Claude API）。カメラは canvas の映像で代用し、APIの返事は模擬
+  {
+    const m = load(), c = m.ctx; c.setup();
+    const L = c.createLot({ prefix: 'HRH', start: '52001', kind: '20kg' });
+    c.createLot({ prefix: 'HEP', start: '61001', kind: '20kg' });
+    const reply = (o, extra) => ({ code: 200, body: Object.assign({ model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(Object.assign(
+      { readable: true, symbol: 'HRH', number: '', volume_l: '47', tare_kg: '16.7', seal_kg: '17.2', test_pressure_mpa: '3.0', manufactured: '7-26', kind: '20kg', other: '', confidence: 'high', note: '' }, o)) }] }, extra || {}) });
+    global.CLAUDE_REQS = []; global.CLAUDE_REPLIES = [];
+    let err = '';
+    try { c.readKokuin({ image: 'AAAA' }); } catch (e) { err = e.message; }
+    check('刻印: APIキーがなければ設定のしかたを案内（APIは呼ばない）', err.includes('ANTHROPIC_API_KEY') && global.CLAUDE_REQS.length === 0, err);
+    c.PropertiesService.getScriptProperties().setProperty('ANTHROPIC_API_KEY', 'sk-test');
+    global.CLAUDE_REPLIES.push(reply({}, { stop_reason: 'refusal', content: [] }));
+    check('刻印: 断られたときは「読めない」で返す', c.readKokuin({ image: 'AAAA' }).readable === false);
+    global.CLAUDE_REPLIES.push({ code: 401, body: { error: { message: 'invalid x-api-key' } } });
+    err = ''; try { c.readKokuin({ image: 'AAAA' }); } catch (e) { err = e.message; }
+    check('刻印: APIキーが違うと分かるエラー', err.includes('APIキーが正しくありません'), err);
+    global.CLAUDE_REPLIES.push({ code: 529, body: { error: { message: 'overloaded' } } }, reply({ number: '52-0 09', symbol: 'h r h' }));
+    const rr = c.readKokuin({ image: 'AAAA' });
+    check('刻印: 混雑（529）は1回やり直す・番号は数字だけ／記号は英大文字だけにそろえる', rr.readable && rr.number === '52009' && rr.symbol === 'HRH', JSON.stringify(rr));
+    check('刻印: 年月「7-26」は月-年下2桁（2026年7月）・W検算OK', rr.ym === '2026-07' && rr.manufactured === '7-26' && rr.w_check === 'OK' && rr.confidence === 'high', JSON.stringify(rr));
+    global.CLAUDE_REPLIES.push(reply({ number: '52?05' }));
+    const rq = c.readKokuin({ image: 'AAAA' });
+    check('刻印: 読めない桁（?）が残る番号は「読めない」（推測で埋めない）', rq.readable === false && rq.number === '52?05', JSON.stringify(rq));
+    global.CLAUDE_REPLIES.push(reply({ number: '52005', tare_kg: '16.?', seal_kg: '17.1' }));
+    const rs = c.readKokuin({ image: 'AAAA' });
+    check('刻印: Wの末尾が読めずシールが読めれば W＝シール−0.5', rs.tare_kg === '16.6' && rs.w_from_seal === true, JSON.stringify(rs));
+    global.CLAUDE_REPLIES.push(reply({ number: '52005', tare_kg: '16.8', seal_kg: '17.1' }));
+    const rn = c.readKokuin({ image: 'AAAA' });
+    check('刻印: W検算が合わなければ確からしさ「低」', rn.w_check === 'NG' && rn.confidence === 'low' && rn.note.includes('W検算'), JSON.stringify(rn));
+    check('刻印: 運用ルールの要点（0とC・月-年・シールは読まない）をAIに渡す', global.CLAUDE_REQS[global.CLAUDE_REQS.length - 1].body.system.includes('C様の字形は0') && global.CLAUDE_REQS[0].body.system.includes('7-26 は2026年7月'));
+    global.CLAUDE_REQS = [];
+
+    const fakeCam = `<script>
+      window.__camCanvas = document.createElement('canvas'); __camCanvas.width = 640; __camCanvas.height = 480;
+      window.__camColor = '#cccccc';
+      window.__camPaint = function() { const g = __camCanvas.getContext('2d'); g.fillStyle = __camColor; g.fillRect(0, 0, 640, 480); g.fillStyle = '#000'; g.font = '80px sans-serif'; g.fillText('HRH 52005', 60, 260); };
+      __camPaint(); setInterval(__camPaint, 100);
+      Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: function() { return Promise.resolve(__camCanvas.captureStream(10)); } } });
+    </script>`;
+    const pk = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+    pk.on('pageerror', e => check('ページでJSエラーなし(刻印)', false, e.message));
+    await pk.exposeFunction('__gas', (fn, arg) => {
+      try { const v = c[fn](JSON.parse(arg)); return JSON.stringify({ v: JSON.parse(JSON.stringify(v === undefined ? null : v)) }); }
+      catch (e) { return JSON.stringify({ err: e.message }); }
+    });
+    await pk.setContent(html.replace('<head>', '<head>' + fakeCam)); await pk.waitForTimeout(500);
+    await pk.evaluate(() => { const x = document.getElementById('dateOkMode'); x.checked = false; x.dispatchEvent(new Event('change')); });
+    await pk.selectOption('#fWorker', '山田'); await pk.fill('#fDevice', 'iPad-K');
+    await pk.click('#btnStart'); await pk.waitForTimeout(200);
+    const kr = () => { const sh = m.ss.getSheetByName('刻印記録'); return sh && sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 21).getValues() : []; };
+    const paint = async (col) => { await pk.evaluate((x) => { window.__camColor = x; }, col); };
+
+    // 1本目: 確からしさ「高」→ そのまま質量の入力へ
+    global.CLAUDE_REPLIES.push(reply({ number: '52005' }));
+    await pk.click('#btnCam'); await pk.waitForTimeout(2600);
+    const req = global.CLAUDE_REQS[0] || { body: {}, opt: { headers: {} } }, b = req.body;
+    check('刻印: 容器が止まったら1コマ送る（JPEG）', global.CLAUDE_REQS.length === 1 && b.messages && b.messages[0].content[0].source.media_type === 'image/jpeg' && b.messages[0].content[0].source.data.length > 1000);
+    check('刻印: Opus 5.5・構造化出力・断られたときの切り替え（fallbacks）', b.model === 'claude-opus-5-5' && b.output_config.format.type === 'json_schema' && b.fallbacks === 'default' &&
+      req.opt.headers['anthropic-beta'] === 'server-side-fallback-2026-07-01' && req.opt.headers['anthropic-version'] === '2026-10-21' && req.opt.headers['x-api-key'] === 'sk-test', JSON.stringify(req.opt.headers));
+    check('刻印: 入力中ロットの記号と範囲・機種を手がかりに渡す', b.messages && b.messages[0].content[1].text.includes('HRH 52001〜52100（20kg）') && b.messages[0].content[1].text.includes('HEP 61001〜61100'));
+    check('刻印: 「高」なら読んだ番号で質量の入力に進み、刻印のWを先に入れる', (await pk.textContent('#sheetTitle')).includes('52005') && (await pk.textContent('#valMass')) === '16.7' &&
+      (await pk.textContent('#notice')).includes('シール17.2で検算OK') && (await pk.textContent('#notice')).includes('製造 2026-07'), await pk.textContent('#notice'));
+    let rows = kr();
+    check('刻印: 刻印記録シートに読み取り内容を残す', rows.length === 1 && rows[0][1] === L.lotId && rows[0][2] === '52005' && rows[0][3] === 'HRH' && rows[0][5] === '47' && rows[0][6] === '16.7' &&
+      rows[0][7] === '3.0' && rows[0][8] === '2026-07' && rows[0][10] === 'high' && rows[0][11] === 'auto' && rows[0][12] === '山田' && rows[0][13] === 'iPad-K' &&
+      rows[0][17] === '17.2' && rows[0][18] === 'OK' && rows[0][19] === '20kg' && rows[0][20] === '7-26', JSON.stringify(rows));
+    await pk.keyboard.press('NumpadEnter');
+    await pk.waitForTimeout(1500);
+    check('刻印: 先に入れたWは Enter だけで保存・写ったままなら、もう読まない', global.CLAUDE_REQS.length === 1 && c.getLot(L.lotId).entries['52005'] === 16.7, global.CLAUDE_REQS.length);
+
+    // 2本目: 確からしさ「中」→ もう一度読んで同じ番号なら入力
+    global.CLAUDE_REPLIES.push(reply({ number: '52006', confidence: 'medium' }), reply({ number: '52006', confidence: 'medium' }));
+    await paint('#ffffff'); await pk.waitForTimeout(800);
+    let seen = false;
+    for (let i = 0; i < 20 && global.CLAUDE_REQS.length < 3; i++) { await pk.waitForTimeout(150); if (await pk.isVisible('#btnCamUse')) seen = true; }
+    await pk.waitForTimeout(500);
+    check('刻印: 「中」は1回目では入力せず、2回続けて同じ番号なら入力', seen && global.CLAUDE_REQS.length === 3 && (await pk.textContent('#sheetTitle')).includes('52006'), global.CLAUDE_REQS.length);
+    rows = kr();
+    check('刻印: 2回読んで決めたことを記録', rows.length === 2 && rows[1][2] === '52006' && rows[1][11] === 'auto2', JSON.stringify(rows[1]));
+    check('刻印: Wは打ち直せる（数字を打つと先に入れた値を消す）', (await pk.textContent('#valMass')) === '16.7');
+    for (const ch of '168') await pk.keyboard.press('Numpad' + ch);
+    await pk.waitForTimeout(400);
+    check('刻印: 打ち直したWで保存', c.getLot(L.lotId).entries['52006'] === 16.8, JSON.stringify(c.getLot(L.lotId).entries['52006']));
+
+    // 3本目: 記号がロットと違う → 入力しない（番号違いの容器を入れない）
+    global.CLAUDE_REPLIES.push(reply({ number: '52007', symbol: 'HXX' }));
+    await paint('#777777'); await pk.waitForTimeout(3000);
+    check('刻印: 記号がロットと違えば入力しない（1回だけ読む）', global.CLAUDE_REQS.length === 4 && (await pk.textContent('#camStatus')).includes('記号が違います') &&
+      kr().length === 2 && (await pk.textContent('#sheetTitle')) === '', await pk.textContent('#camStatus'));
+
+    // 4本目: 読めない → 同じ場面では2回でやめる
+    global.CLAUDE_REPLIES.push(reply({ readable: false, number: '', note: '光って読めない' }), reply({ readable: false, number: '', note: '光って読めない' }));
+    await paint('#333333'); await pk.waitForTimeout(4000);
+    check('刻印: 読めない場面は2回でやめる（送りすぎない）', global.CLAUDE_REQS.length === 6 && (await pk.textContent('#camStatus')).includes('光って読めない'), global.CLAUDE_REQS.length + ' ' + await pk.textContent('#camStatus'));
+
+    // 確からしさ「低」・容器種別違い: 自動では入れず、ボタンで入れる
+    global.CLAUDE_REPLIES.push(reply({ number: '52010', tare_kg: '16.8', seal_kg: '17.1' }), reply({ number: '52011', kind: '50kg' }));
+    await paint('#aaaaaa'); await pk.waitForTimeout(2600);
+    check('刻印: W検算が合わない（低）は自動で入れない', global.CLAUDE_REQS.length === 7 && (await pk.textContent('#sheetTitle')) === '' && await pk.isVisible('#btnCamUse') &&
+      (await pk.textContent('#camStatus')).includes('確からしさが低'), global.CLAUDE_REQS.length + ' ' + await pk.textContent('#camStatus'));
+    await pk.click('#btnCamUse'); await pk.waitForTimeout(300);
+    check('刻印: 「低」でもボタンで入れられる（Wは検算NGなので入れない）', (await pk.textContent('#sheetTitle')).includes('52010') && (await pk.textContent('#valMass')) === '' && kr().slice(-1)[0][11] === 'button');
+    await pk.click('#btnSheetClose'); await pk.waitForTimeout(100);
+    await paint('#555555'); await pk.waitForTimeout(2600);
+    check('刻印: 容器種別がロットの機種と違えば自動で入れない', global.CLAUDE_REQS.length === 8 && (await pk.textContent('#sheetTitle')) === '' && (await pk.textContent('#camStatus')).includes('容器種別が違う'), await pk.textContent('#camStatus'));
+    global.CLAUDE_REPLIES.push(reply({ number: '52008' }));
+    // 「今すぐ読む」はいつでも読む
+    await pk.click('#btnCamNow'); await pk.waitForTimeout(800);
+    check('刻印: 「今すぐ読む」で読み直せる', global.CLAUDE_REQS.length === 9 && (await pk.textContent('#sheetTitle')).includes('52008'));
+    await pk.click('#btnSheetClose'); await pk.waitForTimeout(100);
+    await pk.click('#btnCamClose'); await pk.waitForTimeout(100);
+    check('刻印: 閉じるとカメラを止める', await pk.isHidden('#camBox') && await pk.evaluate(() => !document.getElementById('camVideo').srcObject));
+    await pk.close();
   }
   await browser.close();
 

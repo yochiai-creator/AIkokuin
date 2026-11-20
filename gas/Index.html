@@ -283,17 +283,38 @@
   @keyframes spMove { from { transform: translateX(-400px); } to { transform: translateX(0); } }
   @keyframes spBelt { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
   @keyframes spRoll { to { transform: rotate(360deg); } }
+
+  /* 刻印の読み取り（カメラ） */
+  .cambtn { width: 100%; border: 2px solid var(--navy); background: #fff; color: var(--navy); border-radius: 10px;
+    padding: 10px; font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+  .cambtn.on { background: var(--navy); color: #fff; }
+  #camBox { border: 2px solid var(--navy); border-radius: 12px; padding: 8px; margin-bottom: 8px; background: #fff; }
+  .cam-view { position: relative; background: #000; border-radius: 8px; overflow: hidden; }
+  .cam-view video { display: block; width: 100%; max-height: 34vh; object-fit: contain; }
+  .cam-guide { position: absolute; left: 5%; right: 5%; top: 10%; bottom: 10%; border: 3px dashed rgba(255,255,255,.85);
+    border-radius: 8px; pointer-events: none; }
+  .cam-view.busy .cam-guide { border-color: #ffd34d; }
+  .cam-status { margin-top: 6px; font-size: 15px; font-weight: 700; padding: 6px 8px; border-radius: 8px; background: var(--pend); }
+  .cam-status.ok { background: var(--okbg); color: var(--ok); }
+  .cam-status.warn { background: var(--warnbg); color: var(--warn); }
+  .cam-status.err { background: var(--ngbg); color: var(--ng); }
+  .cam-read { font-size: 13px; color: var(--muted); margin-top: 4px; line-height: 1.6; }
+  .cam-read b { color: var(--text); font-size: 15px; }
+  .cam-btns { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
+  .cam-btns button { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 8px 12px; font-size: 15px; }
+  .cam-btns button.use { background: var(--ok); color: #fff; border-color: var(--ok); font-weight: 700; }
+  .cam-btns label { font-size: 14px; display: flex; gap: 4px; align-items: center; }
 </style>
 </head>
 <body>
-<div id="splash"><div class="sp-title">LPG容器 質量入力</div>
+<div id="splash"><div class="sp-title">AI刻印 質量入力</div>
 <svg viewBox="0 0 600 220" aria-hidden="true"><defs><linearGradient id="spBody" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#7c828b"/><stop offset=".16" stop-color="#bfc4cb"/><stop offset=".34" stop-color="#eceef1"/><stop offset=".55" stop-color="#c6cad0"/><stop offset=".85" stop-color="#9aa0a8"/><stop offset="1" stop-color="#737981"/></linearGradient><linearGradient id="spFoot" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#6f757e"/><stop offset=".35" stop-color="#d4d8dd"/><stop offset=".7" stop-color="#a9aeb6"/><stop offset="1" stop-color="#6d737b"/></linearGradient><linearGradient id="spBrass" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#8a6512"/><stop offset=".4" stop-color="#f1cf6a"/><stop offset="1" stop-color="#9b7418"/></linearGradient></defs><g class="sp-cyls"><g transform="translate(-350,0)"><rect x="-25.0" y="172" width="50.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 72 h34 v34 h-34z M-11 78 h18 v18 h-18z"/><rect x="-17" y="72" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="83" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="80" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-28.0" y="98" width="56" height="76" rx="25.8" ry="19.0" fill="url(#spBody)"/><path d="M-27.0 118.2 Q0 122.2 27.0 118.2" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-28.0" y1="165" x2="28.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="134.9" font-size="11.2"><tspan font-size="7.3">燃</tspan>LPガス</text><text x="1" y="145.0" font-size="5.6">充てん期限 2024･4</text></g></g><g transform="translate(-250,0)"><rect x="-23.0" y="172" width="46.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 64 h34 v34 h-34z M-11 70 h18 v18 h-18z"/><rect x="-17" y="64" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="75" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="72" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-26.0" y="90" width="52" height="84" rx="23.9" ry="17.7" fill="url(#spBody)"/><path d="M-25.0 108.7 Q0 112.7 25.0 108.7" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-26.0" y1="165" x2="26.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="128.3" font-size="10.4"><tspan font-size="6.8">燃</tspan>LPガス</text><text x="1" y="137.7" font-size="5.2">充てん期限 2024･4</text></g></g><g transform="translate(-150,0)"><rect x="-21.0" y="172" width="42.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-24.0" y="66" width="48" height="108" rx="22.1" ry="16.3" fill="url(#spBody)"/><path d="M-23.0 83.3 Q0 87.3 23.0 83.3" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-24.0" y1="165" x2="24.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="110.5" font-size="9.6"><tspan font-size="6.2">燃</tspan>LPガス</text><text x="1" y="119.1" font-size="4.8">充てん期限 2024･4</text></g><rect x="-5" y="59" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="50" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="54" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="46" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="43" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g><g transform="translate(-50,0)"><rect x="-24.0" y="172" width="48.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-27.0" y="36" width="54" height="138" rx="24.8" ry="18.4" fill="url(#spBody)"/><path d="M-26.0 55.4 Q0 59.4 26.0 55.4" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-27.0" y1="165" x2="27.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="91.0" font-size="10.8"><tspan font-size="7.0">燃</tspan>LPガス</text><text x="1" y="100.7" font-size="5.4">充てん期限 2024･4</text></g><rect x="-5" y="29" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="20" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="24" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="16" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="13" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g><g transform="translate(50,0)"><rect x="-25.0" y="172" width="50.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 72 h34 v34 h-34z M-11 78 h18 v18 h-18z"/><rect x="-17" y="72" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="83" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="80" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-28.0" y="98" width="56" height="76" rx="25.8" ry="19.0" fill="url(#spBody)"/><path d="M-27.0 118.2 Q0 122.2 27.0 118.2" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-28.0" y1="165" x2="28.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="134.9" font-size="11.2"><tspan font-size="7.3">燃</tspan>LPガス</text><text x="1" y="145.0" font-size="5.6">充てん期限 2024･4</text></g></g><g transform="translate(150,0)"><rect x="-23.0" y="172" width="46.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 64 h34 v34 h-34z M-11 70 h18 v18 h-18z"/><rect x="-17" y="64" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="75" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="72" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-26.0" y="90" width="52" height="84" rx="23.9" ry="17.7" fill="url(#spBody)"/><path d="M-25.0 108.7 Q0 112.7 25.0 108.7" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-26.0" y1="165" x2="26.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="128.3" font-size="10.4"><tspan font-size="6.8">燃</tspan>LPガス</text><text x="1" y="137.7" font-size="5.2">充てん期限 2024･4</text></g></g><g transform="translate(250,0)"><rect x="-21.0" y="172" width="42.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-24.0" y="66" width="48" height="108" rx="22.1" ry="16.3" fill="url(#spBody)"/><path d="M-23.0 83.3 Q0 87.3 23.0 83.3" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-24.0" y1="165" x2="24.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="110.5" font-size="9.6"><tspan font-size="6.2">燃</tspan>LPガス</text><text x="1" y="119.1" font-size="4.8">充てん期限 2024･4</text></g><rect x="-5" y="59" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="50" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="54" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="46" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="43" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g><g transform="translate(350,0)"><rect x="-24.0" y="172" width="48.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-27.0" y="36" width="54" height="138" rx="24.8" ry="18.4" fill="url(#spBody)"/><path d="M-26.0 55.4 Q0 59.4 26.0 55.4" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-27.0" y1="165" x2="27.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="91.0" font-size="10.8"><tspan font-size="7.0">燃</tspan>LPガス</text><text x="1" y="100.7" font-size="5.4">充てん期限 2024･4</text></g><rect x="-5" y="29" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="20" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="24" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="16" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="13" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g><g transform="translate(450,0)"><rect x="-25.0" y="172" width="50.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 72 h34 v34 h-34z M-11 78 h18 v18 h-18z"/><rect x="-17" y="72" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="83" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="80" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-28.0" y="98" width="56" height="76" rx="25.8" ry="19.0" fill="url(#spBody)"/><path d="M-27.0 118.2 Q0 122.2 27.0 118.2" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-28.0" y1="165" x2="28.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="134.9" font-size="11.2"><tspan font-size="7.3">燃</tspan>LPガス</text><text x="1" y="145.0" font-size="5.6">充てん期限 2024･4</text></g></g><g transform="translate(550,0)"><rect x="-23.0" y="172" width="46.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 64 h34 v34 h-34z M-11 70 h18 v18 h-18z"/><rect x="-17" y="64" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="75" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="72" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-26.0" y="90" width="52" height="84" rx="23.9" ry="17.7" fill="url(#spBody)"/><path d="M-25.0 108.7 Q0 112.7 25.0 108.7" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-26.0" y1="165" x2="26.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="128.3" font-size="10.4"><tspan font-size="6.8">燃</tspan>LPガス</text><text x="1" y="137.7" font-size="5.2">充てん期限 2024･4</text></g></g><g transform="translate(650,0)"><rect x="-21.0" y="172" width="42.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-24.0" y="66" width="48" height="108" rx="22.1" ry="16.3" fill="url(#spBody)"/><path d="M-23.0 83.3 Q0 87.3 23.0 83.3" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-24.0" y1="165" x2="24.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="110.5" font-size="9.6"><tspan font-size="6.2">燃</tspan>LPガス</text><text x="1" y="119.1" font-size="4.8">充てん期限 2024･4</text></g><rect x="-5" y="59" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="50" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="54" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="46" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="43" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g><g transform="translate(750,0)"><rect x="-24.0" y="172" width="48.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-27.0" y="36" width="54" height="138" rx="24.8" ry="18.4" fill="url(#spBody)"/><path d="M-26.0 55.4 Q0 59.4 26.0 55.4" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-27.0" y1="165" x2="27.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="91.0" font-size="10.8"><tspan font-size="7.0">燃</tspan>LPガス</text><text x="1" y="100.7" font-size="5.4">充てん期限 2024･4</text></g><rect x="-5" y="29" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="20" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="24" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="16" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="13" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g><g transform="translate(850,0)"><rect x="-25.0" y="172" width="50.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 72 h34 v34 h-34z M-11 78 h18 v18 h-18z"/><rect x="-17" y="72" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="83" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="80" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-28.0" y="98" width="56" height="76" rx="25.8" ry="19.0" fill="url(#spBody)"/><path d="M-27.0 118.2 Q0 122.2 27.0 118.2" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-28.0" y1="165" x2="28.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="134.9" font-size="11.2"><tspan font-size="7.3">燃</tspan>LPガス</text><text x="1" y="145.0" font-size="5.6">充てん期限 2024･4</text></g></g><g transform="translate(950,0)"><rect x="-23.0" y="172" width="46.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 64 h34 v34 h-34z M-11 70 h18 v18 h-18z"/><rect x="-17" y="64" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="75" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="72" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-26.0" y="90" width="52" height="84" rx="23.9" ry="17.7" fill="url(#spBody)"/><path d="M-25.0 108.7 Q0 112.7 25.0 108.7" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-26.0" y1="165" x2="26.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="128.3" font-size="10.4"><tspan font-size="6.8">燃</tspan>LPガス</text><text x="1" y="137.7" font-size="5.2">充てん期限 2024･4</text></g></g><g transform="translate(1050,0)"><rect x="-21.0" y="172" width="42.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-24.0" y="66" width="48" height="108" rx="22.1" ry="16.3" fill="url(#spBody)"/><path d="M-23.0 83.3 Q0 87.3 23.0 83.3" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-24.0" y1="165" x2="24.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="110.5" font-size="9.6"><tspan font-size="6.2">燃</tspan>LPガス</text><text x="1" y="119.1" font-size="4.8">充てん期限 2024･4</text></g><rect x="-5" y="59" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="50" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="54" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="46" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="43" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g></g>
 <rect x="0" y="186" width="600" height="24" rx="4" fill="#38426b"/><circle class="sp-roll" cx="20" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="70" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="120" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="170" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="220" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="270" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="320" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="370" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="420" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="470" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="520" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="570" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/>
 <line class="sp-belt" x1="0" y1="187" x2="600" y2="187" stroke="#9aa3c0" stroke-width="2" stroke-dasharray="30 20"/></svg>
 <div class="sp-sub">読み込み中…</div></div>
 <script>window.SPLASH_T0 = Date.now();</script>
 <header>
-  <h1>LPG容器 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">v137（底黒を同じロットで別の日にも登録できる）</span></h1>
+  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v1（lpg-weight-app v137 ＋ カメラで刻印を読む）</span></h1>
   <span class="user" id="workerBadge"></span>
   <span class="user" id="user"></span>
   <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
@@ -394,6 +415,19 @@
 <main id="entry" class="hidden">
   <div class="input-layout">
     <div class="panel" id="inPanel">
+      <button class="cambtn" id="btnCam" tabindex="-1">📷 刻印を読む（カメラ）</button>
+      <div id="camBox" class="hidden">
+        <div class="cam-view" id="camView"><video id="camVideo" playsinline muted autoplay></video><div class="cam-guide"></div></div>
+        <div class="cam-status" id="camStatus"></div>
+        <div class="cam-read" id="camRead"></div>
+        <div class="cam-btns">
+          <button class="use hidden" id="btnCamUse" tabindex="-1"></button>
+          <button id="btnCamNow" tabindex="-1">今すぐ読む</button>
+          <label><input type="checkbox" id="camAuto" style="width:auto" tabindex="-1">止めたら自動で読む</label>
+          <button id="btnCamClose" tabindex="-1">閉じる</button>
+        </div>
+        <input type="file" id="camFile" accept="image/*" capture="environment" class="hidden">
+      </div>
       <div class="field" id="fldNum">
         <div class="lbl"><span>容器番号</span><span id="numHint">下3桁でOK（先頭の0は不要）</span></div>
         <div class="val" id="valNum"></div>
@@ -1245,7 +1279,7 @@
   function resetEntry(msg, kind) {
     S.stage = 'num'; S.ng = false; S.bufNum = ''; S.bufActual = ''; S.bufMass = '';
     S.target = null; S.confirmDup = false; S.confirmMassText = null; S.ngFrom = ''; S.fullMass = false;
-    S.overwrite = ''; S.seal = false; S.dateOk = false; S.missNext = false;
+    S.overwrite = ''; S.seal = false; S.dateOk = false; S.missNext = false; S.kokuinFill = false;
     setNotice(msg || '容器番号を入力', kind || 'info');
     render();
   }
@@ -1382,6 +1416,8 @@
         if (k === 'Enter') { S.dateOk = true; setNotice('製造年月OK。質量を入力', 'info'); render(); return; }
         if (/^\d$/.test(k) || k === '.' || k === '+') { dateOkFirst(); return; }
       }
+      // 刻印から先に入れたWは、数字を打ったら打ち直しとして消す
+      if (S.kokuinFill && (/^\d$/.test(k) || k === '.' || k === 'Backspace')) { S.bufMass = ''; S.kokuinFill = false; if (k === 'Backspace') { render(); return; } }
       if (/^\d$/.test(k) || k === '.') {
         if (S.bufMass === MISSING || S.bufMass === REPAIR) S.bufMass = '';
         const win = shortWindow(S.target.lot);
@@ -2131,6 +2167,234 @@
       if (t) g.scrollTop = Math.max(0, t.offsetTop - g.clientHeight / 2 + t.offsetHeight / 2);
     }
   }
+
+  // ---------- 刻印の読み取り（カメラ） ----------
+  // カメラの映像を見て、容器が止まったら1コマをサーバー（readKokuin → Claude API）に送り、刻印を読む。
+  // 容器番号が入力中のロットに1つだけ当てはまり、確からしさが「高」か、「中」で2回続けて同じ番号なら、その番号で入力する。
+  // 「低」（W検算が合わない等）や容器種別がロットと違うときは自動では入れず、ボタンで確かめてから入れる。
+  // 刻印のW（容器自重）は質量の欄に先に入れておく（Enterで保存・違えば打ち直す）。
+  // 読み取った刻印（記号・番号・V・W・シール・TP・製造年月・種別）は saveKokuin で「刻印記録」シートに残す。
+  // 読み取りのきまりは共有ドライブ「刻印読み取り_運用一式」の共通ルールに合わせている（gas/Kokuin.js）。
+  const CAM = {
+    TICK_MS: 600,       // 映像を見る間隔
+    STEADY: 6,          // 前のコマとの差がこれ未満なら「止まっている」
+    MOVED: 14,          // 読み取った容器からの差がこれ以上なら「次の容器に替わった」
+    MAX_SIDE: 1600,     // 送る画像の長い辺（px）
+    FAIL_LIMIT: 2       // 同じ場面で読めなかったら、場面が変わるまで送らない回数
+  };
+  const K = { on: false, stream: null, timer: null, busy: false, photo: false,
+    prevSig: null, doneSig: null, failSig: null, failCount: 0, cand: null, pauseUntil: 0 };
+  $('camAuto').checked = store.get('lpg.camAuto') !== '0';
+  $('camAuto').onchange = function() { store.set('lpg.camAuto', this.checked ? '1' : '0'); };
+
+  function camStatus(text, kind) { const el = $('camStatus'); el.textContent = text; el.className = 'cam-status' + (kind ? ' ' + kind : ''); }
+
+  function camOpen() {
+    K.on = true; K.photo = false; K.prevSig = null; K.cand = null; K.failSig = null; K.failCount = 0;
+    $('camBox').classList.remove('hidden'); $('btnCam').classList.add('on'); $('btnCam').textContent = '📷 刻印読み取り中（タップで閉じる）';
+    $('camView').classList.remove('hidden'); $('btnCamNow').textContent = '今すぐ読む'; $('btnCamUse').classList.add('hidden');
+    $('camRead').textContent = '';
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return camPhotoMode('この画面ではカメラ映像が使えません。写真を撮って読みます');
+    camStatus('カメラを起動しています…');
+    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false })
+      .then(function(st) {
+        if (!K.on) { st.getTracks().forEach(function(t) { t.stop(); }); return; }
+        K.stream = st;
+        const v = $('camVideo'); v.srcObject = st;
+        const p = v.play(); if (p && p.catch) p.catch(function() { /* 自動再生できなくても映像は出る */ });
+        clearInterval(K.timer); K.timer = setInterval(camTick, CAM.TICK_MS);
+        camStatus('刻印を枠に入れて、容器を止めてください');
+      })
+      .catch(function(e) { camPhotoMode('カメラ映像を使えません（' + (e && e.name || 'エラー') + '）。写真を撮って読みます'); });
+  }
+
+  // カメラ映像が使えないとき（iPadの設定・ブラウザの制限）は、写真を1枚撮って読む
+  function camPhotoMode(msg) {
+    K.photo = true; $('camView').classList.add('hidden'); $('btnCamNow').textContent = '📷 写真を撮って読む';
+    camStatus(msg, 'warn');
+  }
+
+  function camClose() {
+    K.on = false; clearInterval(K.timer); K.timer = null;
+    if (K.stream) { K.stream.getTracks().forEach(function(t) { t.stop(); }); K.stream = null; }
+    $('camVideo').srcObject = null;
+    $('camBox').classList.add('hidden'); $('btnCam').classList.remove('on'); $('btnCam').textContent = '📷 刻印を読む（カメラ）';
+  }
+
+  // 映像の小さな白黒の写し（48×36）。コマどうしの差で「止まった」「次の容器に替わった」を見分ける
+  const sigCanvas = document.createElement('canvas'); sigCanvas.width = 48; sigCanvas.height = 36;
+  function frameSig(v) {
+    const g = sigCanvas.getContext('2d', { willReadFrequently: true });
+    g.drawImage(v, 0, 0, 48, 36);
+    const d = g.getImageData(0, 0, 48, 36).data, out = new Array(48 * 36);
+    for (let i = 0; i < out.length; i++) out[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
+    return out;
+  }
+  function sigDiff(a, b) {
+    if (!a || !b) return 999;
+    let t = 0; for (let i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]);
+    return t / a.length;
+  }
+
+  // 枠の中（左右5%・上下10%を除く）を切り出し、長い辺を CAM.MAX_SIDE 以下にしてJPEGにする
+  function grabJpeg(src, w, h, crop) {
+    const sx = crop ? w * 0.05 : 0, sy = crop ? h * 0.10 : 0, sw = w - sx * 2, sh = h - sy * 2;
+    const k = Math.min(1, CAM.MAX_SIDE / Math.max(sw, sh));
+    const c = document.createElement('canvas'); c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+    c.getContext('2d').drawImage(src, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.85).split(',')[1];
+  }
+
+  function camTick() {
+    if (!K.on) return;
+    if ($('entry').classList.contains('hidden')) { camClose(); return; }
+    const v = $('camVideo');
+    if (K.busy || !v.videoWidth || S.stage !== 'num' || Date.now() < K.pauseUntil) return;
+    const sig = frameSig(v);
+    const steady = sigDiff(sig, K.prevSig) < CAM.STEADY;
+    K.prevSig = sig;
+    // 容器が替わったら、前の容器の候補（ボタン）は消す（別の容器に前の番号を入れないため）
+    if (K.cand && K.cand.sig && sigDiff(sig, K.cand.sig) >= CAM.MOVED) { K.cand = null; $('btnCamUse').classList.add('hidden'); }
+    if (!$('camAuto').checked) return;
+    if (K.doneSig && sigDiff(sig, K.doneSig) < CAM.MOVED) return;            // 読み取った容器がまだ写っている
+    K.doneSig = null;
+    if (!steady) { if (!K.cand) camStatus('刻印を枠に入れて、容器を止めてください'); return; }
+    if (K.failSig && sigDiff(sig, K.failSig) < CAM.STEADY && K.failCount >= CAM.FAIL_LIMIT) return;   // 同じ場面で読めなかった
+    camRead(grabJpeg(v, v.videoWidth, v.videoHeight, true), sig, 'auto');
+  }
+
+  function camHints() { return S.lots.map(function(l) { return { prefix: l.prefix, start: l.start, end: l.end, kind: l.kind }; }); }
+
+  function camRead(image, sig, how) {
+    K.busy = true; $('camView').classList.add('busy'); camStatus('読み取り中…');
+    call('readKokuin', { image: image, hints: camHints() }).then(function(r) {
+      K.busy = false; $('camView').classList.remove('busy');
+      onKokuin(r, sig, how);
+    }, function(e) {
+      K.busy = false; $('camView').classList.remove('busy');
+      K.pauseUntil = Date.now() + 5000;     // エラーのあとは少し待つ（送りすぎない）
+      camStatus('読み取りエラー: ' + (e && e.message || e), 'err');
+    });
+  }
+
+  function kokuinText(r) {
+    const parts = [];
+    if (r.kind && r.kind !== '不明') parts.push(r.kind);
+    if (r.volume_l) parts.push('V' + r.volume_l);
+    if (r.tare_kg) parts.push('W' + r.tare_kg + (r.w_from_seal ? '（シールから）' : ''));
+    if (r.seal_kg) parts.push('シール' + r.seal_kg + (r.w_check === 'OK' ? ' 検算OK' : r.w_check === 'NG' ? ' 検算NG' : ''));
+    if (r.test_pressure_mpa) parts.push('TP' + r.test_pressure_mpa);
+    if (r.manufactured) parts.push('製造 ' + (r.ym || r.manufactured));
+    return parts.join('・');
+  }
+  // ロットの容器区分と読み取った種別が合うか（30kg把手は30kg として見る。読めなければ合うとみなす）
+  function kindOk(lot, kind) {
+    if (!kind || kind === '不明' || !lot.kind) return true;
+    return String(lot.kind).replace(/把手$/, '') === kind;
+  }
+
+  function showKokuin(r) {
+    const conf = { high: '高', medium: '中', low: '低' }[r.confidence] || '－';
+    $('camRead').innerHTML = (r.number ? '<b>' + esc((r.symbol ? r.symbol + ' ' : '') + r.number) + '</b>　' : '') +
+      esc(kokuinText(r)) + (r.other ? '　' + esc(r.other) : '') + '　確からしさ: ' + conf +
+      (r.note ? '<br>' + esc(r.note) : '');
+  }
+
+  // 読み取った番号を入力中のロットに当てはめる → { hit } か { err }
+  function matchKokuin(r) {
+    const all = resolve(r.number);
+    const hits = all.filter(function(h) { return !r.symbol || !h.lot.prefix || h.lot.prefix === r.symbol; });
+    const name = (r.symbol ? r.symbol + ' ' : '') + r.number;
+    if (hits.length === 1) {
+      if (!kindOk(hits[0].lot, r.kind)) return { hit: hits[0], warn: '容器種別が違うかもしれません（刻印から ' + r.kind + '、ロットは ' + hits[0].lot.kind + '）' };
+      return { hit: hits[0] };
+    }
+    if (hits.length > 1) return { err: '「' + name + '」は複数のロットに当てはまります（' + hits.map(function(h) { return label(h.lot, h.serial); }).join('、') + '）' };
+    if (all.length) return { err: '記号が違います: 刻印は「' + r.symbol + '」、ロットは「' + all.map(function(h) { return h.lot.prefix; }).join('・') + '」' };
+    return { err: '「' + name + '」はどのロットの範囲にもありません' };
+  }
+
+  function onKokuin(r, sig, how) {
+    showKokuin(r);
+    $('btnCamUse').classList.add('hidden');
+    if (S.stage !== 'num') { camStatus('質量の入力中です。保存してから次の容器を読みます', 'warn'); return; }
+    if (!r.readable) {
+      K.failCount = K.failSig && sigDiff(sig, K.failSig) < CAM.STEADY ? K.failCount + 1 : 1; K.failSig = sig;
+      K.cand = null;
+      camStatus('読めませんでした' + (r.note ? '（' + r.note + '）' : '') + '。角度や光を変えるか、テンキーで入力してください', 'warn');
+      return;
+    }
+    K.failSig = null; K.failCount = 0;
+    const m = matchKokuin(r);
+    if (m.err) { K.cand = null; K.doneSig = sig; beep(false); camStatus(m.err + '。番号を確かめてテンキーで入力してください', 'err'); return; }
+    const key = m.hit.lot.lotId + '|' + m.hit.serial;
+    const prev = K.cand;      // 同じ場面での前の読み（容器が替わると camTick で消える）
+    const again = !!prev && prev.key === key && prev.read.confidence !== 'low';
+    K.cand = { key: key, hit: m.hit, read: r, sig: sig };
+    $('btnCamUse').textContent = label(m.hit.lot, m.hit.serial) + ' で入力';
+    // ボタン待ちのあいだは同じ場面を読み直さない（容器が替わるか「今すぐ読む」まで）
+    if (m.warn) { K.doneSig = sig; $('btnCamUse').classList.remove('hidden'); beep(false); camStatus(m.warn + '。確かめて合っていれば「' + $('btnCamUse').textContent + '」', 'err'); return; }
+    if (r.confidence === 'high' || (again && r.confidence === 'medium')) return kokuinAccept(how === 'photo' ? 'photo' : again ? 'auto2' : 'auto');
+    $('btnCamUse').classList.remove('hidden');
+    if (r.confidence === 'low') {
+      K.doneSig = sig;
+      camStatus('「' + label(m.hit.lot, m.hit.serial) + '」と読みましたが確からしさが低です（' + (r.note || '要目視') + '）。刻印を目で確かめて、合っていればボタン', 'err');
+      return;
+    }
+    if (prev) {
+      // 2回読んで番号が食い違った: 自動では決めない
+      K.doneSig = sig;
+      camStatus('読むたびに番号が変わります（' + label(prev.hit.lot, prev.hit.serial) + ' / ' + label(m.hit.lot, m.hit.serial) + '）。刻印を目で確かめてください', 'err');
+      return;
+    }
+    // 確からしさが中: もう一度読んで同じなら入力する。待たずに使うときはボタン
+    camStatus('「' + label(m.hit.lot, m.hit.serial) + '」と読みました（確からしさ: 中）。もう一度読んで確かめます', 'warn');
+  }
+
+  function kokuinAccept(how) {
+    const c = K.cand; if (!c || S.stage !== 'num') return;
+    K.cand = null; K.doneSig = K.prevSig; $('btnCamUse').classList.add('hidden');
+    const lot = c.hit.lot, serial = c.hit.serial, r = c.read;
+    call('saveKokuin', { lotId: lot.lotId, serial: serial, read: r, how: how, worker: worker(), device: $('fDevice').value.trim() })
+      .catch(function() { /* 記録できなくても入力は続ける */ });
+    S.bufNum = r.number; S.ng = false; S.overwrite = ''; S.missNext = false;
+    camStatus('✓ ' + label(lot, serial) + ' を読み取りました' + (kokuinText(r) ? '（' + kokuinText(r) + '）' : ''), 'ok');
+    goMass(c.hit);
+    if (S.stage === 'mass' && S.target && S.target.serial === serial && lot.entries[serial] === undefined) {
+      const ym = r.ym || r.manufactured;
+      // 刻印のW（容器自重）を質量の欄に先に入れる。W検算が合わないときは入れない
+      if (r.tare_kg && r.w_check !== 'NG') {
+        S.bufMass = r.tare_kg; S.kokuinFill = true;
+        setNotice('刻印 W' + r.tare_kg + (r.w_check === 'OK' ? '（シール' + r.seal_kg + 'で検算OK）' : r.w_from_seal ? '（シール' + r.seal_kg + 'から）' : '') +
+          ' を入れました → Enter で保存・違えば打ち直し' + (ym ? '（製造 ' + ym + '）' : ''), 'info');
+      } else {
+        setNotice('刻印から ' + label(lot, serial) + '。質量を入力' + (ym ? '（製造 ' + ym + '）' : ''), 'info');
+      }
+      render();
+    }
+  }
+
+  $('btnCam').onclick = function() { this.blur(); if (K.on) camClose(); else camOpen(); };
+  $('btnCamClose').onclick = function() { this.blur(); camClose(); };
+  $('btnCamUse').onclick = function() { this.blur(); kokuinAccept('button'); };
+  $('btnCamNow').onclick = function() {
+    this.blur();
+    if (K.busy) return;
+    if (S.stage !== 'num') { camStatus('質量の入力中です。保存してから読んでください', 'warn'); return; }
+    if (K.photo) { $('camFile').value = ''; $('camFile').click(); return; }
+    const v = $('camVideo');
+    if (!v.videoWidth) { camStatus('カメラの映像がまだありません', 'warn'); return; }
+    K.doneSig = null; K.failSig = null; K.failCount = 0;
+    const sig = frameSig(v); K.prevSig = sig;
+    camRead(grabJpeg(v, v.videoWidth, v.videoHeight, true), sig, 'manual');
+  };
+  $('camFile').onchange = function() {
+    const f = this.files && this.files[0]; if (!f) return;
+    const url = URL.createObjectURL(f), img = new Image();
+    img.onload = function() { URL.revokeObjectURL(url); camRead(grabJpeg(img, img.naturalWidth, img.naturalHeight, false), null, 'photo'); };
+    img.onerror = function() { URL.revokeObjectURL(url); camStatus('写真を読み込めませんでした', 'err'); };
+    img.src = url;
+  };
 
   // ---------- キー入力 ----------
   const CODE_MAP = {

@@ -1,8 +1,8 @@
 {
-  "name": "lpg-weight-app",
+  "name": "aikokuin",
   "version": "1.0.0",
   "private": true,
-  "description": "LPG容器 質量転記アプリ（GAS）のテスト",
+  "description": "AI刻印 質量入力（lpg-weight-app のコピー＋刻印の読み取り）のテスト",
   "scripts": {
     "test": "node tools/e2e_test.js",
     "check": "node tools/syntax_check.js"

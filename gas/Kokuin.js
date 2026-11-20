@@ -1,0 +1,242 @@
+// ---------- 刻印の読み取り（AIkokuin で追加） ----------
+// iPadのカメラ映像から切り出した1枚（JPEG）を Claude API に送り、容器の刻印を読む。
+//   readKokuin({ image, hints })  … 読むだけ（記録はしない）
+//   saveKokuin(rec)              … 入力に使った読み取り結果を「刻印記録」シートに1行足す
+// APIキーはスクリプトプロパティ ANTHROPIC_API_KEY に入れる（コードやシートには書かない）。
+// モデルはスクリプトプロパティ KOKUIN_MODEL で変えられる（空なら KOKUIN_MODEL_DEFAULT）。
+
+const KOKUIN_SHEET = '刻印記録';
+const KOKUIN_HEADERS = ['記録日時', 'ロットID', '容器番号', '読取 記号', '読取 番号', '内容積V(L)', '質量W(kg)',
+  '耐圧試験圧力TP(MPa)', '製造年月', 'その他の刻印', '確からしさ', '入力のしかた', '入力者', '端末', 'Googleアカウント', 'モデル', '備考',
+  '総重量シール(kg)', 'W検算', '容器種別（読取）', '刻印の年月（そのまま）'];
+const KOKUIN_MODEL_DEFAULT = 'claude-opus-5-5';
+const KOKUIN_API_URL = 'https://api.anthropic.com/v1/messages';
+const KOKUIN_API_VERSION = '2026-10-21';
+const KOKUIN_FALLBACK_BETA = 'server-side-fallback-2026-07-01';
+const KOKUIN_IMAGE_MAX_CHARS = 4 * 1024 * 1024;   // base64で4MBまで（画面側で1600px・JPEGに縮めて送る）
+
+// 容器種別（共有ドライブ「刻印読み取り_運用一式 / 容器種別判定リファレンス.txt」の9種類）。
+// 名前はこのアプリの容器区分にそろえる（20kg 3P = 20kg三部制）
+const KOKUIN_KINDS = ['5kg', '8kg', '10kg', '20kg', '20kg三部制', '30kg', '40kg', '50kg', '50kg S付', '不明'];
+
+// 返してもらう形（構造化出力）。数値も刻印のまま文字で受け取り、読めない項目は空文字
+const KOKUIN_SCHEMA = {
+  type: 'object',
+  properties: {
+    readable: { type: 'boolean', description: '容器番号の5桁すべてを刻印から確定できたら true' },
+    symbol: { type: 'string', description: '容器番号の記号（英字3文字。例 HXP）。読めない字は ?' },
+    number: { type: 'string', description: '容器番号の数字5桁（例 78611）。読めない桁は ? のまま（例 78?11）' },
+    volume_l: { type: 'string', description: '内容積 V（数字だけ。例 47）' },
+    tare_kg: { type: 'string', description: '刻印の質量 W（容器自重、数字だけ。例 16.6）。読めない桁は ?' },
+    seal_kg: { type: 'string', description: '総重量シール（印刷のシール）の値。写っていて読めるときだけ（例 17.1）' },
+    test_pressure_mpa: { type: 'string', description: '耐圧試験圧力 TP（数字だけ。例 3.0）' },
+    manufactured: { type: 'string', description: '刻印の年月を刻印のとおりに（例 7-26）' },
+    kind: { type: 'string', enum: KOKUIN_KINDS, description: '容器種別' },
+    other: { type: 'string', description: 'そのほかに読めた刻印（LPガス・菱形マーク・※など以外の記号）を空白区切りで' },
+    confidence: { type: 'string', enum: ['high', 'medium', 'low'], description: '容器番号とWの読みの確からしさ' },
+    note: { type: 'string', description: '迷った桁・反射・重ね打ちなど（短く。なければ空文字）' }
+  },
+  required: ['readable', 'symbol', 'number', 'volume_l', 'tare_kg', 'seal_kg', 'test_pressure_mpa', 'manufactured', 'kind', 'other', 'confidence', 'note'],
+  additionalProperties: false
+};
+
+// 共有ドライブ「刻印読み取り_運用一式」（共通ルール・容器種別判定リファレンス・W判定ルール・字体リファレンス）の要点。
+// あちらのルールが更新されたら、ここも合わせる
+const KOKUIN_SYSTEM = [
+  'あなたは野田組の検査ラインで、LPガス容器（神鋼機器工業製）の肩部に打刻された刻印を読み取る係です。写真はラインを撮った動画の1コマです。',
+  '',
+  '【基本原則】',
+  '・読むのは金属の打刻刻印だけ。シール・ラベルの印刷文字は刻印として読まない（総重量シールは seal_kg に入れて検算にだけ使う）。',
+  '・画像で実際に読めた文字を最優先する。番号の範囲や傾向に合わせて読みを変えない。',
+  '・読めない字は ? のまま残す。推測でそれらしい数字を埋めない。容器番号に ? が残れば readable は false。',
+  '・自信がないときは正直に confidence を下げる。人が確認する仕組みなので、それが一番役に立つ。',
+  '',
+  '【刻印の構成】肩部に円弧状に並ぶ: 記号（英字3文字）＋容器番号5桁（例 HXP 78611）／LPガス／V値（内容積）／W値（容器自重、小数第1位まで。例 W16.6）／年月（例 7-26）／TP3.0M／菱形マーク・※。',
+  '・20kgは特殊配置で、V47とW値が縦2段に重なり、年月・TPが斜めに散る。位置で機械的に読まず、記号/番号/V/W/年月/TP をラベルで見分けてから読む。',
+  '・字体は数字がOCRB書体（タイプライター用R型）、英字はR型。迷ったらOCRBの字形で照合する。記号の英字はA〜Zのどれもあり得る。',
+  '・年月は「月-年（西暦下2桁）」。7-26 は2026年7月。刻印のとおり manufactured に書く。TPは TP3.0M が正（小数点が見えなくても 3.0）。',
+  '',
+  '【誤読しやすい字形】',
+  '・0とC: 0の右側が反射で欠けるとCに見える。刻印の数字の位置にCは出ないので、C様の字形は0と判断する。',
+  '・6/8/0/5: 6は下だけ閉じて上が開く、8は上下とも閉じる、0は全閉、5は上部が横棒で角張る。反射で6の下の輪が切れると5に見える。',
+  '・1/7/4: 7は上部に横棒、4は縦横の交差がある、1はどちらもない。暗部・反射で横棒が消えると1に見える。',
+  '・6/9: 6は尾が輪の内側、9は尾が輪の下に垂れる。0/9: 9には下に尾がある。2/3/5: 3は二段の丸み、2は一段のカーブ、5は上部横棒。',
+  '・中央の桁（3・4桁目）と末尾の桁は反射で最も誤読しやすい。迷った桁があれば confidence を medium 以下にして note に書く。',
+  '',
+  '【W値の検算】刻印W ＋ 0.5kg ＝ 総重量シールの値（差はバルブ分）。',
+  '・シールが読めたら seal_kg に入れる。Wとシールが合わなければ、Wか番号の誤読を疑い confidence を low にする。',
+  '・Wの末尾桁が反射で読めないときは ? のままにする（シールからの逆算はこちらで行う）。',
+  '・Wはバッチ内でも 16.5/16.6/16.7/16.8 などが混在する。決めつけず刻印を読む。',
+  '',
+  '【容器種別（kind）】記号の頭2文字・V値・Wのおおまかな範囲・配置の型で決める。決められなければ 不明。',
+  '・5kg: 記号HR系 V11.8 W約6.8 ／ 8kg: HX系 V19 W約9.6 ／ 10kg: HC系 V23.5 W約11.2',
+  '・20kg: HX系（現行HXP）V47 W約16.5〜16.9 特殊配置 ／ 20kg三部制: HH系 V47 W約17.5 標準2段',
+  '・30kg: HA系 V70.5 W約23.9 ／ 40kg: HD系 V85.5 W約28.4',
+  '・50kg: HE系 V117.5 W約34.6〜35.1 ／ 50kg S付: HH系 V117.5 W約36.2',
+  '・記号は番号が99999に達すると3文字目が1つ進む（HXP 99999 → HXQ 00001）。',
+  '',
+  '【confidence】high = この1枚で全桁が明瞭に確定（Wとシールが読めれば検算も合う）。medium = 一部の桁に迷いがあるが最善の読みがある。low = 検算が合わない、または確定できない。',
+  '刻印が写っていない・ぼけている・光って読めないときは readable を false にして、理由を note に短く書く。'
+].join('\n');
+
+// 画面から呼ぶ: 1枚読んで結果を返す
+function readKokuin(req) {
+  req = req || {};
+  const image = String(req.image || '').replace(/^data:image\/\w+;base64,/, '');
+  if (!image) throw new Error('画像がありません');
+  if (image.length > KOKUIN_IMAGE_MAX_CHARS) throw new Error('画像が大きすぎます（' + Math.round(image.length / 1024) + 'KB）');
+  const props = PropertiesService.getScriptProperties();
+  const key = props.getProperty('ANTHROPIC_API_KEY');
+  if (!key) {
+    throw new Error('刻印読み取りのAPIキーが未設定です。Apps Script の「プロジェクトの設定 > スクリプト プロパティ」に ' +
+      'ANTHROPIC_API_KEY を追加してください。');
+  }
+  const model = props.getProperty('KOKUIN_MODEL') || KOKUIN_MODEL_DEFAULT;
+  const body = {
+    model: model,
+    max_tokens: 4000,
+    system: KOKUIN_SYSTEM,
+    output_config: { effort: 'low', format: { type: 'json_schema', schema: KOKUIN_SCHEMA } },
+    // 安全側の判定で断られたときは、APIが別のモデルで読み直す
+    fallbacks: 'default',
+    messages: [{
+      role: 'user',
+      content: [
+        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } },
+        { type: 'text', text: kokuinPrompt_(req.hints) }
+      ]
+    }]
+  };
+  const started = Date.now();
+  const res = kokuinFetch_(key, body);
+  const out = parseKokuinResponse_(res);
+  out.model = res.model || model;
+  out.ms = Date.now() - started;
+  return out;
+}
+
+// いま入力中のロットの記号と番号の範囲を手がかりとして渡す（画像と合わないときは画像を優先させる）
+function kokuinPrompt_(hints) {
+  let text = 'この写真の容器刻印を読み取ってください。';
+  const list = (Array.isArray(hints) ? hints : []).slice(0, 40).map(function(h) {
+    return (String(h.prefix || '') + ' ' + String(h.start || '') + '〜' + String(h.end || '') + (h.kind ? '（' + h.kind + '）' : '')).trim();
+  }).filter(String);
+  if (list.length) {
+    text += '\n参考: いま検査中のロットの容器番号は次の範囲です（記号 番号の範囲）。ただし写真に見える文字を優先し、' +
+      '範囲に合わせて読みを変えないでください。\n' + list.join('\n');
+  }
+  return text;
+}
+
+// API呼び出し。混雑（429・529）と一時的な 5xx は少し待って1回だけやり直す
+function kokuinFetch_(key, body) {
+  const opt = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'x-api-key': key, 'anthropic-version': KOKUIN_API_VERSION, 'anthropic-beta': KOKUIN_FALLBACK_BETA },
+    payload: JSON.stringify(body),
+    muteHttpExceptions: true
+  };
+  let code = 0, text = '';
+  for (let i = 0; i < 2; i++) {
+    const r = UrlFetchApp.fetch(KOKUIN_API_URL, opt);
+    code = r.getResponseCode(); text = r.getContentText();
+    if (code === 200) return JSON.parse(text);
+    if (!(code === 429 || code >= 500) || i === 1) break;
+    Utilities.sleep(1500);
+  }
+  let msg = '';
+  try { msg = JSON.parse(text).error.message; } catch (e) { msg = String(text).slice(0, 200); }
+  if (code === 401) throw new Error('刻印読み取りのAPIキーが正しくありません（ANTHROPIC_API_KEY を確認してください）');
+  if (code === 429 || code === 529) throw new Error('刻印読み取りが混み合っています。少し待ってもう一度読んでください');
+  throw new Error('刻印読み取りに失敗しました（' + code + '）: ' + msg);
+}
+
+// 返事から結果を取り出す。断られた・途中で切れたときは「読めない」として返す
+function parseKokuinResponse_(res) {
+  const empty = { readable: false, symbol: '', number: '', volume_l: '', tare_kg: '', seal_kg: '', test_pressure_mpa: '',
+    manufactured: '', ym: '', kind: '不明', other: '', confidence: 'low', note: '', w_check: '', w_from_seal: false };
+  if (res.stop_reason === 'refusal') { empty.note = '読み取りを断られました'; return empty; }
+  if (res.stop_reason === 'max_tokens') { empty.note = '読み取りが途中で切れました'; return empty; }
+  const block = (res.content || []).filter(function(b) { return b.type === 'text'; }).pop();
+  if (!block) { empty.note = '読み取り結果がありません'; return empty; }
+  let o;
+  try { o = JSON.parse(block.text); } catch (e) { empty.note = '読み取り結果の形が違います'; return empty; }
+  const s = function(v) { return v === undefined || v === null ? '' : String(v).trim(); };
+  // 数字の欄は数字・小数点・?だけ残す（全角は半角に）。読めない桁の ? は消さない
+  const num = function(v) { return s(v).replace(/[０-９．？]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).replace(/[^0-9.?]/g, ''); };
+  const out = {
+    readable: o.readable === true,
+    symbol: s(o.symbol).toUpperCase().replace(/[^A-Z?]/g, ''),
+    number: num(o.number).replace(/\./g, ''),
+    volume_l: num(o.volume_l), tare_kg: num(o.tare_kg), seal_kg: num(o.seal_kg), test_pressure_mpa: num(o.test_pressure_mpa),
+    manufactured: s(o.manufactured), ym: kokuinYm_(s(o.manufactured)),
+    kind: KOKUIN_KINDS.indexOf(o.kind) >= 0 ? o.kind : '不明',
+    other: s(o.other),
+    confidence: ['high', 'medium', 'low'].indexOf(o.confidence) >= 0 ? o.confidence : 'low',
+    note: s(o.note), w_check: '', w_from_seal: false
+  };
+  // 番号は5桁すべて読めたときだけ使う（? が残る・桁が足りないものは入力に使わない）
+  if (!/^\d{5,}$/.test(out.number)) out.readable = false;
+  if (out.symbol.indexOf('?') >= 0) out.symbol = '';
+  kokuinCheckW_(out);
+  return out;
+}
+
+// W検算: 刻印W ＋ 0.5 ＝ 総重量シール。合わなければ確からしさを「低」に。
+// Wの末尾が読めず（?）シールが読めたときは、W ＝ シール − 0.5 で確定する（運用ルールで最も確実とされている方法）
+function kokuinCheckW_(out) {
+  const w = /^\d+\.\d$/.test(out.tare_kg) ? Number(out.tare_kg) : null;
+  const seal = /^\d+(\.\d)?$/.test(out.seal_kg) ? Number(out.seal_kg) : null;
+  if (w !== null && seal !== null) {
+    out.w_check = Math.abs(w + 0.5 - seal) < 0.05 ? 'OK' : 'NG';
+    if (out.w_check === 'NG') {
+      out.confidence = 'low';
+      out.note = (out.note ? out.note + ' / ' : '') + 'W検算が合わない（W' + out.tare_kg + '＋0.5≠シール' + out.seal_kg + '）';
+    }
+  } else if (w === null && seal !== null && (out.tare_kg === '' || out.tare_kg.indexOf('?') >= 0)) {
+    out.tare_kg = (Math.round((seal - 0.5) * 10) / 10).toFixed(1);
+    out.w_from_seal = true; out.w_check = 'シールから';
+  }
+  // 読めないW（? が残る・形が違う）は入力に使わないので空にする
+  if (!/^\d+\.\d$/.test(out.tare_kg)) out.tare_kg = '';
+}
+
+// 刻印の年月「7-26」（月-年の下2桁）→「2026-07」。形が違えば空
+function kokuinYm_(text) {
+  const m = String(text || '').match(/^(\d{1,2})\s*[-－.]\s*(\d{2})$/);
+  if (!m || Number(m[1]) < 1 || Number(m[1]) > 12) return '';
+  return '20' + m[2] + '-' + ('0' + m[1]).slice(-2);
+}
+
+// 画面から呼ぶ: 入力に使った読み取り結果を記録する
+function saveKokuin(rec) {
+  rec = rec || {};
+  const r = rec.read || {};
+  let account = '';
+  try { account = Session.getActiveUser().getEmail(); } catch (e) { /* 取れなくても記録する */ }
+  const sh = kokuinSheet_();
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    sh.appendRow([new Date(), String(rec.lotId || ''), "'" + String(rec.serial || ''), String(r.symbol || ''), "'" + String(r.number || ''),
+      String(r.volume_l || ''), String(r.tare_kg || ''), String(r.test_pressure_mpa || ''), "'" + String(r.ym || ''),
+      String(r.other || ''), String(r.confidence || ''), String(rec.how || ''), String(rec.worker || ''), String(rec.device || ''),
+      account, String(r.model || ''), String(r.note || ''),
+      String(r.seal_kg || ''), String(r.w_check || ''), String(r.kind || ''), "'" + String(r.manufactured || '')]);
+  } finally {
+    lock.releaseLock();
+  }
+  return { ok: true };
+}
+
+function kokuinSheet_() {
+  const ss = getSpreadsheet_();
+  let sh = ss.getSheetByName(KOKUIN_SHEET);
+  if (!sh) {
+    sh = ss.insertSheet(KOKUIN_SHEET);
+    sh.getRange(1, 1, 1, KOKUIN_HEADERS.length).setValues([KOKUIN_HEADERS]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}

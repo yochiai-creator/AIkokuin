@@ -49,12 +49,14 @@ const MASS_MAX = 99.9;
 
 // ---------- Web app ----------
 
-// 本番のプロジェクト（スプレッドシートにバインド）と入力画面のURL。
-// 旧URL（別プロジェクト 1WRdps6z…）で開かれたら、入力はさせずに新しいURLへ案内する
-const MAIN_SCRIPT_ID = '17mOYxTzPwzIsrILrYL7pH0Rn-jYOjQ8f52n5KZm0-0p-ojhxBG246vu4';
-const MAIN_WEBAPP_URL = 'https://script.google.com/a/macros/nodagumi40.com/s/AKfycbyDM2IQ8NY6LgQpLb0gpQoK32fAQtWVBrdBQduZ6FOBWREFn61Qb55R9Q20Y4u9IfQ5/exec';
+// このコピー（AIkokuin）のプロジェクトと入力画面のURL。
+// MAIN_SCRIPT_ID を入れると、ほかのプロジェクト（古いURL）で開かれたときは入力させずに MAIN_WEBAPP_URL へ案内する。
+// 空のあいだは案内しない（lpg-weight-app 本番のIDは入れないこと）
+const MAIN_SCRIPT_ID = '';
+const MAIN_WEBAPP_URL = '';
 
 function isOldProject_() {
+  if (!MAIN_SCRIPT_ID || !MAIN_WEBAPP_URL) return false;
   try { return ScriptApp.getScriptId() !== MAIN_SCRIPT_ID; } catch (e) { return false; }
 }
 
@@ -66,19 +68,19 @@ function movedPageHtml_() {
     'a.btn{display:inline-block;background:#1f2a5c;color:#fff;text-decoration:none;font-size:20px;font-weight:700;padding:16px 28px;border-radius:12px}' +
     'small{display:block;margin-top:20px;color:#6b7390;font-size:13px;line-height:1.6;word-break:break-all}</style></head><body>' +
     '<div class="box"><h1>このURLは使えなくなりました</h1>' +
-    '<p>LPG容器 質量入力は新しいURLに移りました。<br>下のボタンで開いて、ホーム画面に追加し直してください。</p>' +
+    '<p>AI刻印 質量入力は新しいURLに移りました。<br>下のボタンで開いて、ホーム画面に追加し直してください。</p>' +
     '<a class="btn" href="' + MAIN_WEBAPP_URL + '" target="_top">新しい入力画面を開く</a>' +
     '<small>新しいURL: ' + MAIN_WEBAPP_URL + '</small></div></body></html>';
 }
 
 function doGet() {
   if (isOldProject_()) {
-    return HtmlService.createHtmlOutput(movedPageHtml_()).setTitle('LPG容器 質量入力（URLが変わりました）')
+    return HtmlService.createHtmlOutput(movedPageHtml_()).setTitle('AI刻印 質量入力（URLが変わりました）')
       .addMetaTag('viewport', 'width=device-width, initial-scale=1')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
   return HtmlService.createHtmlOutputFromFile('Index')   // テンプレートの処理がない分速い（Index.html に <? ?> は使わない）
-    .setTitle('LPG容器 質量入力')
+    .setTitle('AI刻印 質量入力')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -251,9 +253,10 @@ function onOpen() {
     .addToUi();
 }
 
-// 記録先のスプレッドシート「LPG容器_質量入力」。ウェブアプリからは「開いているスプレッドシート」が
-// 取れないため、IDで開く。スクリプトプロパティ SPREADSHEET_ID があればそちらを優先する
-const DEFAULT_SPREADSHEET_ID = '1h0VM9ECv1NnSuwuo2jxTaiPVC6o5oYwWi1lZ9Qx1hms';
+// 記録先のスプレッドシート。ウェブアプリからは「開いているスプレッドシート」が取れないため、IDで開く。
+// スクリプトプロパティ SPREADSHEET_ID（初期セットアップで入る）を優先する。
+// 空のときはバインド先を使う（lpg-weight-app 本番のIDは入れないこと）
+const DEFAULT_SPREADSHEET_ID = '';
 
 // 1回の実行の中では同じものを使い回す（openById は毎回だと遅い）
 let SS_CACHE_ = null;
@@ -1583,13 +1586,13 @@ function sharedProps_() {
 }
 
 // ---------- ドライブのフォルダ（全部ここにまとめる） ----------
-// LPG容器 質量入力/
+// AI刻印 質量入力/
 //   LPG容器_質量入力（このスプレッドシート）
 //   成績表PDF/2026年/09月/50kg/   完了したロットの成績表PDF（月の中を機種ごとに分ける）
 //   採番表/2026年/09月/      採番表PDF
-//   採番表/LPG容器 採番表_2026   採番表の一覧（スプレッドシート、年ごと）
-//   入力記録（過去分）/LPG容器 入力記録_2026   年替わりに移した入力記録
-const ROOT_FOLDER_NAME = 'LPG容器 質量入力';
+//   採番表/AI刻印 採番表_2026   採番表の一覧（スプレッドシート、年ごと）
+//   入力記録（過去分）/AI刻印 入力記録_2026   年替わりに移した入力記録
+const ROOT_FOLDER_NAME = 'AI刻印 質量入力';
 const REPORT_PDF_FOLDER = '成績表PDF';
 const ARCHIVE_FOLDER = '入力記録（過去分）';
 
@@ -1609,10 +1612,10 @@ function getPdfFolder_() {
   return folder;
 }
 
-// 「LPG容器 質量入力」（と旧名「LPG容器 検査成績表PDF」）のフォルダを古い順に
+// 「AI刻印 質量入力」（と旧名「AI刻印 検査成績表PDF」）のフォルダを古い順に
 function rootCandidates_() {
   const out = [];
-  [ROOT_FOLDER_NAME, 'LPG容器 検査成績表PDF'].forEach(function(n) {
+  [ROOT_FOLDER_NAME, 'AI刻印 検査成績表PDF'].forEach(function(n) {
     const it = DriveApp.getFoldersByName(n);
     while (it.hasNext()) out.push(it.next());
   });
@@ -1698,7 +1701,7 @@ function ensureFolderLayout_() {
   return true;
 }
 
-// 保存先: 「LPG容器 質量入力 / 成績表PDF / 2026年 / 09月」のように年・月のフォルダを自動で作って入れる
+// 保存先: 「AI刻印 質量入力 / 成績表PDF / 2026年 / 09月」のように年・月のフォルダを自動で作って入れる
 function getPdfMonthFolder_(date) {
   const tz = 'Asia/Tokyo';
   const year = childFolder_(childFolder_(getPdfFolder_(), REPORT_PDF_FOLDER), Utilities.formatDate(date, tz, 'yyyy') + '年');
