@@ -1397,14 +1397,30 @@ function check(name, ok, detail) {
     await pv.click('#btnVidClose'); await pv.waitForTimeout(200);
     global.CLAUDE_REQS = [];
     global.CLAUDE_REPLIES = [reply({ number: '52021' }), reply({ number: '52022' }), reply({ number: '52021' }), reply({ number: '52022' })];
-    const shots = await pv.evaluate(() => ['#cc2222', '#cc2222', '#2222cc'].map(col => {
+    // 赤・青・赤の3枚。撮影日時の順なら 赤・赤・青（2場面）、名前の順なら 赤・青・赤（3場面）になる
+    const shots = await pv.evaluate(() => ['#cc2222', '#2222cc', '#cc2222'].map(col => {
       const cv = document.createElement('canvas'); cv.width = 400; cv.height = 300; const g = cv.getContext('2d'); g.fillStyle = col; g.fillRect(0, 0, 400, 300);
       return cv.toDataURL('image/jpeg').split(',')[1];
     }));
-    await pv.setInputFiles('#vidFile', shots.map((b, i) => ({ name: 'IMG_' + (100 + i) + '.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(b, 'base64') })));
+    // 撮影日時（Exif、1秒未満まで）を入れ、ファイル名はわざと逆順にする → 撮影日時の順に並ぶこと
+    const withExif = (b64, dt, sub) => {
+      const jpg = Buffer.from(b64, 'base64'), dtb = Buffer.from(dt + '\0', 'ascii');
+      const t = Buffer.alloc(8 + 2 + 12 + 4 + 2 + 24 + 4 + dtb.length);
+      t.write('II', 0); t.writeUInt16LE(42, 2); t.writeUInt32LE(8, 4);
+      t.writeUInt16LE(1, 8); t.writeUInt16LE(0x8769, 10); t.writeUInt16LE(4, 12); t.writeUInt32LE(1, 14); t.writeUInt32LE(26, 18); t.writeUInt32LE(0, 22);
+      t.writeUInt16LE(2, 26);
+      t.writeUInt16LE(0x9003, 28); t.writeUInt16LE(2, 30); t.writeUInt32LE(dtb.length, 32); t.writeUInt32LE(56, 36);
+      t.writeUInt16LE(0x9291, 40); t.writeUInt16LE(2, 42); t.writeUInt32LE(sub.length + 1, 44); Buffer.from(sub + '\0', 'ascii').copy(t, 48);
+      t.writeUInt32LE(0, 52); dtb.copy(t, 56);
+      const app1 = Buffer.concat([Buffer.from([0xFF, 0xE1, 0, 0]), Buffer.from('Exif\0\0', 'binary'), t]);
+      app1.writeUInt16BE(app1.length - 2, 2);
+      return Buffer.concat([jpg.slice(0, 2), app1, jpg.slice(2)]);
+    };
+    const exifs = [['2026:11:20 10:00:00', '100'], ['2026:11:20 10:00:01', '200'], ['2026:11:20 10:00:00', '600']];
+    await pv.setInputFiles('#vidFile', shots.map((b, i) => ({ name: 'IMG_' + (300 - i * 100) + '.jpg', mimeType: 'image/jpeg', buffer: withExif(b, exifs[i][0], exifs[i][1]) })));
     for (let i = 0; i < 40 && !(await pv.isVisible('#btnVidSave')); i++) await pv.waitForTimeout(250);
     const srow = await pv.$$eval('.vid-row', els => els.map(e => e.textContent));
-    check('連続写真: 3枚から2場面を選んで読み、2本の一覧（何枚目かも出す）', global.CLAUDE_REQS.length === 4 && srow.length === 2 && srow[0].includes('52021') && srow[0].includes('1枚目') && srow[1].includes('52022') && srow[1].includes('3枚目'), JSON.stringify(srow) + ' reqs=' + global.CLAUDE_REQS.length);
+    check('連続写真: 撮影日時（Exif）の順に並べ、3枚から2場面を選んで読み、2本の一覧（何枚目かも出す）', global.CLAUDE_REQS.length === 4 && srow.length === 2 && srow[0].includes('52021') && srow[0].includes('1枚目') && srow[1].includes('52022') && srow[1].includes('3枚目'), JSON.stringify(srow) + ' reqs=' + global.CLAUDE_REQS.length);
     await pv.close();
   }
   await browser.close();
