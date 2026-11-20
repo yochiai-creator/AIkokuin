@@ -5,6 +5,17 @@ const fs = require('fs');
 const { chromium } = require('playwright');
 
 const results = [];
+// JPEG の大きさ（SOF の幅・高さ）
+function jpegSize(b) {
+  let o = 2;
+  while (o + 9 < b.length) {
+    if (b[o] !== 0xFF) return null;
+    const mk = b[o + 1], len = b.readUInt16BE(o + 2);
+    if (mk >= 0xC0 && mk <= 0xC2) return { h: b.readUInt16BE(o + 5), w: b.readUInt16BE(o + 7) };
+    o += 2 + len;
+  }
+  return null;
+}
 function check(name, ok, detail) {
   results.push(!!ok);
   console.log((ok ? 'PASS' : 'FAIL') + '  カメラ: ' + name + (ok || detail === undefined ? '' : '  → ' + detail));
@@ -72,8 +83,18 @@ function check(name, ok, detail) {
     check('写真に Exif の撮影日時（1秒未満まで）が入る・ファイル名も撮影時刻', buf[0] === 0xFF && buf[1] === 0xD8 && txt.includes('Exif') && /\d{4}:\d\d:\d\d \d\d:\d\d:\d\d/.test(txt) &&
       /^AIK_\d{8}_\d{6}_\d{3}\.jpg$/.test(downloads[0].suggestedFilename()), downloads[0].suggestedFilename());
   }
+  if (downloads.length) {
+    const sz = jpegSize(fs.readFileSync(await downloads[0].path()));
+    // 映像 640×360・刻印の枠 (0.25,0.25,0.5,0.5) → 保存する範囲は 左右に35%（x 0.075〜0.925）・上に1.2倍・下に0.4倍（y 0〜0.95） → 544×342
+    check('保存する範囲（刻印のまわり）だけを縮めずに保存', sz && sz.w === 544 && sz.h === 342, JSON.stringify(sz));
+  }
   await page.click('#btnShot'); await page.waitForTimeout(500);
   check('「手動で撮る」でも撮れる', (await shots()) === 1);
+  // 撮った写真の小さな画像をタップすると大きく出る
+  await page.click('#thumbs img'); await page.waitForTimeout(200);
+  check('写真をタップすると大きく見られる', await page.isVisible('#big') && (await page.getAttribute('#bigImg', 'src')).startsWith('data:image/jpeg'));
+  await page.click('#big'); await page.waitForTimeout(100);
+  check('名前は「LPG刻印カメラ」', (await page.title()) === 'LPG刻印カメラ');
   await page.close();
 
   // ---- 流れるモード（既定）: 刻印が枠を左から右へ流れて通り過ぎたら撮る
@@ -107,6 +128,7 @@ function check(name, ok, detail) {
   check('流れる: 刻印がないあいだは撮らない', (await fshots()) === 2);
   await pass(); await pass();
   check('流れる: 続けて流れてきた2本もそれぞれ撮る（合計3本・6枚）', (await fshots()) === 6 && await fp.evaluate(() => window.__aikc.passes) === 3, await fshots());
+  check('流れる: 本数と枚数を出す', (await fp.textContent('#count')) === '3 本・6 枚', await fp.textContent('#count'));
   await fp.close();
 
   await browser.close();

@@ -1,6 +1,6 @@
 {
-  "name": "AI刻印カメラ",
-  "short_name": "AI刻印カメラ",
+  "name": "LPG刻印カメラ",
+  "short_name": "LPG刻印カメラ",
   "start_url": "./",
   "display": "fullscreen",
   "orientation": "landscape",

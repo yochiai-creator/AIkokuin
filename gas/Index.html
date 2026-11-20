@@ -321,7 +321,7 @@
 <div class="sp-sub">読み込み中…</div></div>
 <script>window.SPLASH_T0 = Date.now();</script>
 <header>
-  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v8（自動撮影カメラ）</span></h1>
+  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v9（LPG刻印カメラ）</span></h1>
   <span class="user" id="workerBadge"></span>
   <span class="user" id="user"></span>
   <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
@@ -2213,9 +2213,10 @@
   const V = { video: null, img: null, url: '', how: 'video', picks: [], reads: [], items: [], running: false, stop: false, cost: 0, nFast: 0, nPrecise: 0 };
 
   // 切り出して、長い辺を VID.MAX_SIDE 以下にしてJPEGにする。
-  // 横長の動画（1920×1080 など）は真ん中（左右10%・下15%を除く。キャップ・シール・刻印は残る）を縮めずに送る
-  function grabJpeg(src, w, h) {
-    const box = w > h * 1.3 ? [0.10, 0.02, 0.80, 0.83] : [0, 0, 1, 1];
+  // 横長の動画（1920×1080 など）は真ん中（左右10%・下15%を除く。キャップ・シール・刻印は残る）を縮めずに送る。
+  // whole: そのまま使う（LPG刻印カメラの写真 AIK_*.jpg は、もう刻印のまわりだけに切り出してある）
+  function grabJpeg(src, w, h, whole) {
+    const box = !whole && w > h * 1.3 ? [0.10, 0.02, 0.80, 0.83] : [0, 0, 1, 1];
     const sx = w * box[0], sy = h * box[1], sw = w * box[2], sh = h * box[3];
     const k = Math.min(1, VID.MAX_SIDE / Math.max(sw, sh));
     const c = document.createElement('canvas'); c.width = Math.round(sw * k); c.height = Math.round(sh * k);
@@ -2484,7 +2485,9 @@
 
   // コマを画像にする（動画はその時刻へ移動、写真は開き直して）
   function grabPick(p) {
-    if (p.file) return loadImage(p.file).then(function(img) { return { image: grabJpeg(img, img.naturalWidth, img.naturalHeight), thumb: thumbOf(img, img.naturalWidth, img.naturalHeight) }; });
+    if (p.file) return loadImage(p.file).then(function(img) {
+      return { image: grabJpeg(img, img.naturalWidth, img.naturalHeight, /^AIK_/.test(p.file.name)), thumb: thumbOf(img, img.naturalWidth, img.naturalHeight) };
+    });
     const v = V.video;
     return vidSeek(v, p.t).then(function() { return { image: grabJpeg(v, v.videoWidth, v.videoHeight), thumb: thumbOf(v, v.videoWidth, v.videoHeight) }; });
   }

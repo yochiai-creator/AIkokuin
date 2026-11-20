@@ -1421,6 +1421,19 @@ function check(name, ok, detail) {
     for (let i = 0; i < 40 && !(await pv.isVisible('#btnVidSave')); i++) await pv.waitForTimeout(250);
     const srow = await pv.$$eval('.vid-row', els => els.map(e => e.textContent));
     check('連続写真: 撮影日時（Exif）の順に並べ、3枚から2場面を選んで読み、2本の一覧（何枚目かも出す）', global.CLAUDE_REQS.length === 4 && srow.length === 2 && srow[0].includes('52021') && srow[0].includes('1枚目') && srow[1].includes('52022') && srow[1].includes('3枚目'), JSON.stringify(srow) + ' reqs=' + global.CLAUDE_REQS.length);
+    // LPG刻印カメラの写真（AIK_*.jpg）はもう刻印のまわりだけなので切らずに読む。ふつうの横長の写真は中央を切り出す
+    await pv.click('#btnVidClose'); await pv.waitForTimeout(200);
+    const jsz = b => { let o = 2; while (o + 9 < b.length) { if (b[o] !== 0xFF) return null; const mk = b[o + 1], len = b.readUInt16BE(o + 2); if (mk >= 0xC0 && mk <= 0xC2) return b.readUInt16BE(o + 7) + 'x' + b.readUInt16BE(o + 5); o += 2 + len; } return null; };
+    const wide = await pv.evaluate(() => { const cv = document.createElement('canvas'); cv.width = 1400; cv.height = 700; const g = cv.getContext('2d'); g.fillStyle = '#ccc'; g.fillRect(0, 0, 1400, 700); return cv.toDataURL('image/jpeg').split(',')[1]; });
+    const sizes = [];
+    for (const name of ['AIK_20261120_100000_000.jpg', 'IMG_0001.jpg']) {
+      global.CLAUDE_REQS = []; global.CLAUDE_REPLIES = [reply({ number: '52031' }), reply({ number: '52031' })];
+      await pv.setInputFiles('#vidFile', { name, mimeType: 'image/jpeg', buffer: Buffer.from(wide, 'base64') });
+      for (let i = 0; i < 40 && !(await pv.isVisible('#btnVidSave')); i++) await pv.waitForTimeout(250);
+      sizes.push(global.CLAUDE_REQS[0] ? jsz(Buffer.from(global.CLAUDE_REQS[0].body.messages[0].content[0].source.data, 'base64')) : null);
+      await pv.click('#btnVidClose'); await pv.waitForTimeout(200);
+    }
+    check('LPG刻印カメラの写真（AIK_）は切らずに読み、ふつうの横長の写真は中央を切り出す', sizes[0] === '1400x700' && sizes[1] === '1120x581', JSON.stringify(sizes));
     await pv.close();
   }
   await browser.close();

@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="AI刻印カメラ">
+<meta name="apple-mobile-web-app-title" content="LPG刻印カメラ">
 <meta name="theme-color" content="#1f2a5c">
 <link rel="manifest" href="manifest.json">
-<title>AI刻印カメラ</title>
+<title>LPG刻印カメラ</title>
 <style>
   :root { --navy: #1f2a5c; --ok: #1e7a4c; --ng: #b94a3d; --warn: #b07a00; --line: #d8e0ee; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -20,6 +20,12 @@
   #zone.armed { border-color: #4fd18b; }
   #zone.shot { border-color: #fff; background: rgba(255,255,255,.35); }
   #zone .lbl { position: absolute; left: 4px; top: 2px; font-size: 13px; font-weight: 700; text-shadow: 0 1px 2px #000; }
+  #crop { position: absolute; border: 2px dashed rgba(255,255,255,.9); border-radius: 4px; touch-action: none; }
+  #crop .lbl { position: absolute; right: 4px; top: 2px; font-size: 12px; text-shadow: 0 1px 2px #000; }
+  #crop .handle { position: absolute; right: -12px; bottom: -12px; width: 24px; height: 24px; border-radius: 50%; background: #fff; border: 2px solid #000; }
+  #big { position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 8; display: flex; align-items: center; justify-content: center; }
+  #big img { max-width: 96vw; max-height: 90vh; }
+  #thumbs img { cursor: pointer; }
   #zone .handle { position: absolute; right: -14px; bottom: -14px; width: 28px; height: 28px; border-radius: 50%; background: #ffd34d; border: 2px solid #000; }
   #state { position: absolute; left: 10px; top: calc(env(safe-area-inset-top) + 10px); right: 10px; font-size: 18px; font-weight: 800;
     padding: 8px 12px; border-radius: 10px; background: rgba(31,42,92,.85); }
@@ -49,6 +55,7 @@
 <body>
 <div id="stage">
   <video id="video" playsinline muted autoplay></video>
+  <div id="crop"><span class="lbl">保存する範囲</span><span class="handle" id="cropHandle"></span></div>
   <div id="zone"><span class="lbl">検知範囲</span><span class="handle" id="handle"></span></div>
   <div id="state">カメラを起動しています…</div>
   <div id="meter"><div id="meterBar"></div></div>
@@ -82,20 +89,41 @@
   </div>
   <label>動きの感度 <span class="v" id="vSens"></span></label>
   <input type="range" id="sSens" min="1" max="10" step="1">
+  <label>保存する範囲</label>
+  <div class="row" style="color:#1b2240;font-size:15px">
+    <label style="margin:0;font-weight:400"><input type="radio" name="cropMode" value="around"> 刻印のまわり（白い点線。おすすめ）</label>
+  </div>
+  <div class="row" style="color:#1b2240;font-size:15px">
+    <label style="margin:0;font-weight:400"><input type="radio" name="cropMode" value="full"> 画面全体</label>
+  </div>
+  <div class="row" style="color:#1b2240;font-size:13px;margin-top:4px">
+    <button class="btn sub" id="btnCropReset" style="color:#1f2a5c;border-color:#1f2a5c">点線を刻印の枠に合わせ直す</button>
+  </div>
+  <div id="zoomBox" class="hidden">
+    <label>ズーム <span class="v" id="vZoom"></span></label>
+    <input type="range" id="sZoom">
+  </div>
+  <div id="torchBox" class="hidden">
+    <label style="font-weight:400"><input type="checkbox" id="cTorch"> ライトをつける（反射が増えるときは消す）</label>
+  </div>
   <div class="note">
     iPadを固定して使います（枠をドラッグで移動、右下の丸で大きさ）。<br>
-    <b>流れる</b>: 枠を<b>刻印が通る位置</b>に合わせます（刻印の文字がちょうど収まるくらい）。刻印が枠を通るあいだで一番くっきりしたコマ（ぶれが少なく枠の中央にある瞬間）を、通り過ぎたときに撮ります。「開始」を押したら最初の1秒は刻印のない状態を覚えるので、枠に刻印がないときに押してください。<br>
+    <b>流れる</b>: 黄色い枠を<b>刻印（例「HEP 36815 W 34.9 6-26」の2段）が通る位置</b>に合わせます（刻印の文字がちょうど収まるくらい）。<br>
+    白い点線は<b>保存する範囲</b>です。刻印・総重量シール・キャップが入るように合わせると、刻印が大きく写って読み取りが正確で安くなります（黄色い枠を動かすと点線もついてきます。点線を自分で動かすと、それ以後は別々に動きます）。<br>
+    光った反射が刻印にかかったコマは選ばないようにしています。反射が多いときは、iPadの角度や照明を変えてください。<br>
+    刻印が枠を通るあいだで一番くっきりしたコマ（ぶれが少なく枠の中央にある瞬間）を、通り過ぎたときに撮ります。「開始」を押したら最初の1秒は刻印のない状態を覚えるので、枠に刻印がないときに押してください。<br>
     <b>止まる</b>: 容器が止まる台の上を枠で囲み、台を空にして「開始」。容器が入って止まると撮り、どくまで同じ容器は撮りません。<br>
     撮った写真は「📤 写真に保存」で写真アプリへ。AIkokuin の「📂 選ぶ」でまとめて選ぶと読み取ります。
   </div>
   <div class="row" style="margin-top:10px"><button class="btn" id="btnSetClose" style="flex:1">閉じる</button></div>
 </div>
+<div id="big" class="hidden"><img id="bigImg" alt=""></div>
 <div id="err" class="hidden"></div>
 
 <script>
 (function() {
   'use strict';
-  // AI刻印カメラ: 刻印が枠を通ったら（流れる）、または容器が枠の中で止まったら（止まる）自動で撮る
+  // LPG刻印カメラ: LPガス容器の刻印が枠を通ったら（流れる）、または容器が枠の中で止まったら（止まる）自動で撮る
   // （AIkokuin の「📂 選ぶ」で読むための写真を作る）。流れるモードは下の「流れるモード」の節。止まるモード:
   //  - 範囲の中を48×36の白黒に縮めて、前のコマとの差（動き）と、空の台・前に撮った容器との差を見る
   //  - 空の台と違う物があり、動きが「止まってから」の時間以上おさまったら、間をあけて何枚か撮る
@@ -119,8 +147,17 @@
     stillMs: store.get('stillMs', 600),
     sens: store.get('sens', 5),
     zone: store.get('zone', { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }),  // 映像に対する割合
-    mode: store.get('mode', 'flow')     // flow: 流れる（刻印が枠を通ったら） / stop: 止まる（止まったら）
+    mode: store.get('mode', 'flow'),    // flow: 流れる（刻印が枠を通ったら） / stop: 止まる（止まったら）
+    cropMode: store.get('cropMode', 'around'),   // around: 刻印のまわりだけ保存 / full: 画面全体
+    crop: store.get('crop', null),               // 保存する範囲（null なら刻印の枠から自動）
+    zoom: store.get('zoom', null), torch: store.get('torch', false)
   };
+  // 保存する範囲の自動: 刻印の枠を左右に35%ずつ、上に枠の高さ1.2倍（総重量シール）、下に0.4倍広げる
+  function autoCrop(z) {
+    const x = Math.max(0, z.x - z.w * 0.35), y = Math.max(0, z.y - z.h * 1.2);
+    return { x: x, y: y, w: Math.min(1, z.x + z.w * 1.35) - x, h: Math.min(1, z.y + z.h * 1.4) - y };
+  }
+  function cropRect() { return cfg.cropMode === 'full' ? { x: 0, y: 0, w: 1, h: 1 } : (cfg.crop || autoCrop(cfg.zone)); }
   function moveTh() { return 11 - cfg.sens; }          // 感度5 → 差6 で「動いた」
 
   // ---------- 状態 ----------
@@ -137,6 +174,7 @@
     navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } })
       .then(function(st) {
         S.stream = st;
+        setupTrack(st.getVideoTracks()[0]);
         const v = $('video'); v.srcObject = st;
         const p = v.play(); if (p && p.catch) p.catch(function() {});
         v.addEventListener('loadedmetadata', layoutZone);
@@ -147,6 +185,25 @@
       })
       .catch(function(e) { showErr('カメラを使えません（' + (e && e.name || e) + '）。<br>Safari の設定でカメラを許可してから、開き直してください。'); });
   }
+  // ズーム・ライト（iPadが対応していれば ⚙ に出る）
+  function setupTrack(track) {
+    S.track = track;
+    const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+    if (caps.zoom && caps.zoom.max > caps.zoom.min) {
+      const z = $('sZoom'); z.min = caps.zoom.min; z.max = Math.min(caps.zoom.max, 10); z.step = caps.zoom.step || 0.1;
+      if (cfg.zoom === null) cfg.zoom = caps.zoom.min;
+      z.value = cfg.zoom; $('zoomBox').classList.remove('hidden'); applyTrack();
+    }
+    if (caps.torch) { $('torchBox').classList.remove('hidden'); $('cTorch').checked = !!cfg.torch; applyTrack(); }
+    showCfg();
+  }
+  function applyTrack() {
+    if (!S.track || !S.track.applyConstraints) return;
+    const adv = {};
+    if (!$('zoomBox').classList.contains('hidden') && cfg.zoom !== null) adv.zoom = Number(cfg.zoom);
+    if (!$('torchBox').classList.contains('hidden')) adv.torch = !!cfg.torch;
+    S.track.applyConstraints({ advanced: [adv] }).catch(function() { /* 効かなくても撮れる */ });
+  }
   function showErr(html) { const el = $('err'); el.innerHTML = html; el.classList.remove('hidden'); }
 
   // ---------- 検知範囲（映像に対する割合 ⇔ 画面の位置） ----------
@@ -155,31 +212,40 @@
     const vw = v.videoWidth || 16, vh = v.videoHeight || 9, k = Math.min(st.width / vw, st.height / vh);
     return { left: (st.width - vw * k) / 2, top: (st.height - vh * k) / 2, w: vw * k, h: vh * k };
   }
-  function layoutZone() {
-    const b = videoBox(), z = cfg.zone, el = $('zone');
+  function place(el, z) {
+    const b = videoBox();
     el.style.left = (b.left + z.x * b.w) + 'px'; el.style.top = (b.top + z.y * b.h) + 'px';
     el.style.width = (z.w * b.w) + 'px'; el.style.height = (z.h * b.h) + 'px';
   }
+  function layoutZone() {
+    place($('zone'), cfg.zone);
+    $('crop').classList.toggle('hidden', cfg.cropMode === 'full');
+    place($('crop'), cropRect());
+  }
   window.addEventListener('resize', layoutZone);
-  (function dragZone() {
+  // 枠をドラッグで移動、右下の丸で大きさ
+  function draggable(el, handleId, get, set, done) {
     let mode = '', sx = 0, sy = 0, z0 = null;
-    $('zone').addEventListener('pointerdown', function(e) {
-      mode = e.target.id === 'handle' ? 'size' : 'move'; sx = e.clientX; sy = e.clientY; z0 = Object.assign({}, cfg.zone);
-      this.setPointerCapture(e.pointerId); e.preventDefault();
+    el.addEventListener('pointerdown', function(e) {
+      if (e.target !== el && e.target.id !== handleId && !el.contains(e.target)) return;
+      e.stopPropagation();
+      mode = e.target.id === handleId ? 'size' : 'move'; sx = e.clientX; sy = e.clientY; z0 = Object.assign({}, get());
+      el.setPointerCapture(e.pointerId); e.preventDefault();
     });
-    $('zone').addEventListener('pointermove', function(e) {
+    el.addEventListener('pointermove', function(e) {
       if (!mode) return;
-      const b = videoBox(), dx = (e.clientX - sx) / b.w, dy = (e.clientY - sy) / b.h, z = cfg.zone;
-      if (mode === 'move') { z.x = clamp(z0.x + dx, 0, 1 - z.w); z.y = clamp(z0.y + dy, 0, 1 - z.h); }
-      else { z.w = clamp(z0.w + dx, 0.1, 1 - z.x); z.h = clamp(z0.h + dy, 0.1, 1 - z.y); }
-      layoutZone();
+      const b = videoBox(), dx = (e.clientX - sx) / b.w, dy = (e.clientY - sy) / b.h, z = Object.assign({}, z0);
+      if (mode === 'move') { z.x = clamp(z0.x + dx, 0, 1 - z0.w); z.y = clamp(z0.y + dy, 0, 1 - z0.h); }
+      else { z.w = clamp(z0.w + dx, 0.05, 1 - z0.x); z.h = clamp(z0.h + dy, 0.05, 1 - z0.y); }
+      set(z); layoutZone();
     });
-    $('zone').addEventListener('pointerup', function() {
-      if (!mode) return; mode = '';
-      store.set('zone', cfg.zone);
-      if (S.running) { S.bg = null; S.hist = []; S.pass = null; S.learnUntil = Date.now() + 1000; setState('枠を変えたので、覚え直します', 'warn'); }
-    });
-  })();
+    el.addEventListener('pointerup', function() { if (!mode) return; mode = ''; done(); });
+  }
+  draggable($('zone'), 'handle', function() { return cfg.zone; }, function(z) { cfg.zone = z; }, function() {
+    store.set('zone', cfg.zone);
+    if (S.running) { S.bg = null; S.hist = []; S.pass = null; S.learnUntil = Date.now() + 1000; setState('枠を変えたので、覚え直します', 'warn'); }
+  });
+  draggable($('crop'), 'cropHandle', function() { return cropRect(); }, function(z) { cfg.crop = z; }, function() { store.set('crop', cfg.crop); });
   function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 
   // ---------- 範囲の中を縮めた白黒の写し ----------
@@ -245,9 +311,10 @@
     g.drawImage(v, z.x * v.videoWidth, z.y * v.videoHeight, zw, zh, 0, 0, W, H);
     const d = g.getImageData(0, 0, W, H).data, a = new Float32Array(W * H);
     for (let i = 0; i < a.length; i++) a[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
-    let t = 0, n = 0, tx = 0;
+    let t = 0, n = 0, tx = 0, glare = 0;
     for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
+      if (a[i] > 235) glare++;
       const s9 = a[i - W - 1] + a[i - W] + a[i - W + 1] + a[i - 1] + a[i] + a[i + 1] + a[i + W - 1] + a[i + W] + a[i + W + 1];
       const e = Math.abs(9 * a[i] - s9);
       t += e; tx += e * x; n++;
@@ -256,7 +323,8 @@
     const sm = new Float32Array(48);
     for (let k = 0; k < 48; k++) { const x = Math.floor((k % 8) * W / 8), y = Math.floor(Math.floor(k / 8) * H / 6); sm[k] = a[y * W + x]; }
     // cx: 模様の左右の重心（0〜1）。0.5 に近いほど刻印が枠の真ん中
-    return { tex: t / n / 9, sm: sm, cx: t ? tx / t / (W - 1) : 0.5 };
+    // glare: 真っ白に飛んだ（光った反射）画素の割合
+    return { tex: t / n / 9, sm: sm, cx: t ? tx / t / (W - 1) : 0.5, glare: glare / n };
   }
   function riseK() { return Math.max(1.05, 1.5 - cfg.sens * 0.05); }   // 感度5 → ふだんの1.25倍で「入った」
   const MIN_PASS_MS = 80, MAX_PASS_MS = 4000, NEAR_MS = 100, BASE_MS = 5000;
@@ -276,13 +344,19 @@
     $('meterBar').style.width = Math.min(100, hi ? f.tex / (hi * 1.3) * 100 : 0) + '%';
     if (now < S.learnUntil) { setState('枠の中のふだんの様子を覚えています…', 'warn'); return; }
     if (!S.pass) {
-      if (f.tex < hi) { setState('見張り中: 刻印が枠を通ったら撮ります', 'ok'); $('zone').classList.remove('armed'); return; }
+      if (f.tex < hi) {
+        S.glareAvg = (S.glareAvg || 0) * 0.95 + f.glare * 0.05;
+        if (S.glareAvg > 0.2) setState('枠の中に光った反射が多いです。iPadの角度や照明を変えてください', 'warn');
+        else setState('見張り中: 刻印が枠を通ったら撮ります（' + S.passes + ' 本・' + S.shots.length + ' 枚）', 'ok');
+        $('zone').classList.remove('armed'); return;
+      }
       S.pass = { start: now, cands: [], below: 0 };
     }
     const p = S.pass;
     $('zone').classList.add('armed'); setState('刻印が通過中…');
-    // 模様が多く、刻印が枠の真ん中にあり、ぶれの少ないコマほど良い
-    keepCand(p, f.tex * (1 - Math.abs(f.cx - 0.5)) - blur * 0.02, now, v);
+    // 模様が多く、刻印が枠の真ん中にあり、光った反射が少なく、ぶれの少ないコマほど良い
+    // （刻印の読み違いのほとんどは反射が原因: 共有ドライブ「刻印読み取り_運用一式」）
+    keepCand(p, f.tex * (1 - Math.abs(f.cx - 0.5)) * (1 - Math.min(0.9, f.glare * 2.5)) - blur * 0.02, now, v);
     if (f.tex < lo) p.below++; else p.below = 0;
     if (p.below >= 2 || now - p.start > MAX_PASS_MS) {
       S.pass = null;
@@ -297,8 +371,7 @@
     else if (p.cands.length < cfg.burst) { slot = { c: document.createElement('canvas') }; p.cands.push(slot); }
     else { const low = p.cands.reduce(function(a, b) { return a.e <= b.e ? a : b; }); if (e <= low.e) return; slot = low; }
     slot.e = e; slot.t = now; slot.at = new Date(now);
-    slot.c.width = v.videoWidth; slot.c.height = v.videoHeight;
-    slot.c.getContext('2d').drawImage(v, 0, 0);
+    drawOut(v, slot.c);
   }
   function saveCands(cands) {
     S.passes++;
@@ -335,10 +408,16 @@
     if (!v.videoWidth) return Promise.resolve();
     if (S.shots.length >= MAX_SHOTS) { setState('ためた写真が ' + MAX_SHOTS + ' 枚になりました。「📤 写真に保存」してください', 'ng'); return Promise.resolve(); }
     const at = new Date();
-    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
-    c.getContext('2d').drawImage(v, 0, 0);
+    const c = document.createElement('canvas'); drawOut(v, c);
     flash(); beep();
     return saveCanvas(c, at).then(function() { setState('撮影しました（' + S.shots.length + ' 枚）', 'ok'); });
+  }
+  // 保存する範囲だけを、縮めずに写す
+  function drawOut(v, c) {
+    const r = cropRect(), sx = Math.round(r.x * v.videoWidth), sy = Math.round(r.y * v.videoHeight);
+    const sw = Math.max(16, Math.round(r.w * v.videoWidth)), sh = Math.max(16, Math.round(r.h * v.videoHeight));
+    c.width = sw; c.height = sh;
+    c.getContext('2d').drawImage(v, sx, sy, sw, sh, 0, 0, sw, sh);
   }
   function saveCanvas(c, at) {
     if (S.shots.length >= MAX_SHOTS) { setState('ためた写真が ' + MAX_SHOTS + ' 枚になりました。「📤 写真に保存」してください', 'ng'); return Promise.resolve(); }
@@ -381,11 +460,15 @@
     const t = document.createElement('canvas'); t.height = 44; t.width = Math.round(c.width * 44 / c.height);
     t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
     const img = new Image(); img.src = t.toDataURL('image/jpeg', 0.6);
+    // タップで大きく（刻印が読める写りか確かめる）
+    const full = c.toDataURL('image/jpeg', 0.8);
+    img.onclick = function() { $('bigImg').src = full; $('big').classList.remove('hidden'); };
     const box = $('thumbs'); box.insertBefore(img, box.firstChild);
     while (box.children.length > 30) box.removeChild(box.lastChild);
   }
+  $('big').onclick = function() { this.classList.add('hidden'); $('bigImg').src = ''; };
   function updateCount() {
-    $('count').textContent = S.shots.length + ' 枚';
+    $('count').textContent = (cfg.mode === 'flow' ? S.passes + ' 本・' : '') + S.shots.length + ' 枚';
     $('btnSave').disabled = !S.shots.length;
     $('btnSave').textContent = '📤 写真に保存（' + S.shots.length + '）';
   }
@@ -427,7 +510,7 @@
     };
     if (navigator.canShare && navigator.canShare({ files: files })) {
       // iPad: 共有シートの「◯枚の画像を保存」で写真アプリへ
-      navigator.share({ files: files, title: 'AI刻印カメラ' }).then(done, function(e) {
+      navigator.share({ files: files, title: 'LPG刻印カメラ' }).then(done, function(e) {
         if (e && e.name === 'AbortError') setState('保存をやめました（写真はまだ残っています）', 'warn');
         else setState('保存できませんでした: ' + (e && e.message || e), 'ng');
       });
@@ -450,6 +533,9 @@
   function runLabel() { return cfg.mode === 'flow' ? '▶ 開始（枠に刻印がないときに押す）' : '▶ 開始（台を空にして押す）'; }
   function showCfg() {
     Array.prototype.forEach.call(document.querySelectorAll('input[name=mode]'), function(r) { r.checked = r.value === cfg.mode; });
+    Array.prototype.forEach.call(document.querySelectorAll('input[name=cropMode]'), function(r) { r.checked = r.value === cfg.cropMode; });
+    if (cfg.zoom !== null) $('vZoom').textContent = Number(cfg.zoom).toFixed(1) + ' 倍';
+    layoutZone();
     $('stillBox').classList.toggle('hidden', cfg.mode !== 'stop');
     $('zone').querySelector('.lbl').textContent = cfg.mode === 'flow' ? '刻印の枠' : '検知範囲';
     if (!S.running) $('btnRun').textContent = runLabel();
@@ -466,6 +552,12 @@
       S.bg = null; S.hist = []; S.pass = null; S.learnUntil = Date.now() + 1000; showCfg();
     };
   });
+  Array.prototype.forEach.call(document.querySelectorAll('input[name=cropMode]'), function(r) {
+    r.onchange = function() { cfg.cropMode = this.value; store.set('cropMode', cfg.cropMode); showCfg(); };
+  });
+  $('btnCropReset').onclick = function() { cfg.crop = null; store.set('crop', null); showCfg(); };
+  $('sZoom').oninput = function() { cfg.zoom = Number(this.value); store.set('zoom', cfg.zoom); applyTrack(); showCfg(); };
+  $('cTorch').onchange = function() { cfg.torch = this.checked; store.set('torch', cfg.torch); applyTrack(); };
   $('btnSet').onclick = function() { $('settings').classList.toggle('hidden'); };
   $('btnSetClose').onclick = function() { $('settings').classList.add('hidden'); };
   showCfg(); layoutZone(); updateCount();
