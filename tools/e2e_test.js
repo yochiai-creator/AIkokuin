@@ -1308,13 +1308,14 @@ function check(name, ok, detail) {
     await pk.setContent(html.replace('<head>', '<head>' + fakeCam)); await pk.waitForTimeout(500);
     await pk.evaluate(() => { const x = document.getElementById('dateOkMode'); x.checked = false; x.dispatchEvent(new Event('change')); });
     await pk.selectOption('#fWorker', '山田'); await pk.fill('#fDevice', 'iPad-K');
-    await pk.click('#btnStart'); await pk.waitForTimeout(200);
+    check('刻印: ホーム画面にも「📷 刻印を読んで入力」がある', await pk.isVisible('#btnStartCam') && !(await pk.isDisabled('#btnStartCam')));
     const kr = () => { const sh = m.ss.getSheetByName('刻印記録'); return sh && sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 21).getValues() : []; };
     const paint = async (col) => { await pk.evaluate((x) => { window.__camColor = x; }, col); };
 
     // 1本目: 確からしさ「高」→ そのまま質量の入力へ
     global.CLAUDE_REPLIES.push(reply({ number: '52005' }));
-    await pk.click('#btnCam'); await pk.waitForTimeout(2600);
+    await pk.click('#btnStartCam'); await pk.waitForTimeout(2600);
+    check('刻印: ホームのボタンで入力画面を開き、すぐカメラを起動', await pk.isVisible('#entry') && await pk.isVisible('#camBox'));
     const req = global.CLAUDE_REQS[0] || { body: {}, opt: { headers: {} } }, b = req.body;
     check('刻印: 容器が止まったら1コマ送る（JPEG）', global.CLAUDE_REQS.length === 1 && b.messages && b.messages[0].content[0].source.media_type === 'image/jpeg' && b.messages[0].content[0].source.data.length > 1000);
     check('刻印: Opus 5.5・構造化出力・断られたときの切り替え（fallbacks）', b.model === 'claude-opus-5-5' && b.output_config.format.type === 'json_schema' && b.fallbacks === 'default' &&

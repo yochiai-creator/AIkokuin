@@ -314,7 +314,7 @@
 <div class="sp-sub">読み込み中…</div></div>
 <script>window.SPLASH_T0 = Date.now();</script>
 <header>
-  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v1（lpg-weight-app v137 ＋ カメラで刻印を読む）</span></h1>
+  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v2（ホームから「📷 刻印を読んで入力」）</span></h1>
   <span class="user" id="workerBadge"></span>
   <span class="user" id="user"></span>
   <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
@@ -337,7 +337,9 @@
   <div class="cards scroll" id="activeLots"></div>
   <div class="row" style="margin-top:14px">
     <button class="btn big" id="btnStart" disabled>入力を始める</button>
+    <button class="btn big sec" id="btnStartCam" disabled>📷 刻印を読んで入力</button>
   </div>
+  <div class="sub" id="camHomeMsg" style="margin-top:6px;font-size:13px;color:var(--muted)"></div>
 
   <h2>新しい組容器番号を登録（範囲を入れると100本ずつまとめて作成）</h2>
   <div class="card">
@@ -984,6 +986,9 @@
     if (bulkLots && bulkLots.length) renderBulk();
     $('btnStart').disabled = !S.lots.length || (S.workers.length > 0 && !worker());
     $('btnStart').textContent = S.workers.length && !worker() ? '入力者を選ぶと入力できます' : '入力を始める';
+    // 刻印の読み取りも入力画面で行うので、入力を始められるときだけ押せる
+    $('btnStartCam').disabled = $('btnStart').disabled;
+    $('camHomeMsg').textContent = !S.lots.length ? '📷 刻印の読み取りは、ロットを登録して入力を始めると使えます（入力画面の「📷 刻印を読む」）' : '';
   }
 
   // 開始〜終了を 001〜100 区切りの100本単位に分けた各ロットの開始番号
@@ -1027,17 +1032,21 @@
   };
 
   // 入力は1台だけ: 入力開始でこのiPadを入力中にする（別のiPadが入力中なら入れない）
-  $('btnStart').onclick = function() {
-    const b = this; b.disabled = true;
+  function startEntry(b, withCam) {
+    b.disabled = true;
+    const go = function() { showEntry(); if (withCam && !K.on) camOpen(); };
     call('claimInput', { devId: DEV_ID, worker: worker(), device: $('fDevice').value.trim() }).then(function(m) {
-      b.disabled = false; S.claims = m || {}; showEntry();
+      b.disabled = false; S.claims = m || {}; go();
     }).catch(function(e) {
       b.disabled = false;
       // 通信できないときは入力画面には入れる（保存はサーバーで見分ける）
       if (/入力中です/.test(errText(e))) { homeMsg('🔒 ' + errText(e), 'err'); pollClaims(); return; }
-      showEntry();
+      go();
     });
-  };
+  }
+  $('btnStart').onclick = function() { startEntry(this, false); };
+  // ホームから: 入力画面を開いてすぐカメラを起動する
+  $('btnStartCam').onclick = function() { startEntry(this, true); };
   (function() {
     const d = new Date(), p2 = function(n) { return ('0' + n).slice(-2); };
     $('saibanDate').value = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
