@@ -1375,6 +1375,63 @@ function check(name, ok, detail) {
     check('刻印: 閉じるとカメラを止める', await pk.isHidden('#camBox') && await pk.evaluate(() => !document.getElementById('camVideo').srcObject));
     await pk.close();
   }
+  // ---- 動画から読む: ブラウザで録った5場面の動画 → コマ分け → 読み取り → まとめ → チェックした分を保存
+  {
+    const m = load(), c = m.ctx; c.setup();
+    const L = c.createLot({ prefix: 'HRH', start: '52001', kind: '20kg' });
+    c.PropertiesService.getScriptProperties().setProperty('ANTHROPIC_API_KEY', 'sk-test');
+    const reply = (o) => ({ code: 200, body: { model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(Object.assign(
+      { readable: true, symbol: 'HRH', number: '', volume_l: '47', tare_kg: '16.7', seal_kg: '17.2', test_pressure_mpa: '3.0', manufactured: '7-26', kind: '20kg', other: '', confidence: 'high', note: '' }, o)) }] } });
+    global.CLAUDE_REQS = [];
+    global.CLAUDE_REPLIES = [reply({ number: '52011' }), reply({ number: '52012', confidence: 'medium' }), reply({ number: '52012', confidence: 'medium' }),
+      reply({ number: '52013', tare_kg: '16.9', seal_kg: '17.1' }), reply({ number: '52014', kind: '50kg' })];
+    const pv = await browser.newPage({ viewport: { width: 820, height: 1180 } });
+    pv.on('pageerror', e => check('ページでJSエラーなし(動画)', false, e.message));
+    await pv.exposeFunction('__gas', (fn, arg) => {
+      try { const v = c[fn](JSON.parse(arg)); return JSON.stringify({ v: JSON.parse(JSON.stringify(v === undefined ? null : v)) }); }
+      catch (e) { return JSON.stringify({ err: e.message }); }
+    });
+    await pv.setContent(html); await pv.waitForTimeout(500);
+    await pv.selectOption('#fWorker', '山田'); await pv.fill('#fDevice', 'iPad-V');
+    await pv.click('#btnStart'); await pv.waitForTimeout(200);
+    // 5場面（色と文字が違う）を1.2秒ずつ録る
+    const b64 = await pv.evaluate(async () => {
+      const cv = document.createElement('canvas'); cv.width = 320; cv.height = 240; const g = cv.getContext('2d');
+      const cols = ['#cc2222', '#22cc22', '#2222cc', '#cccc22', '#22cccc']; let k = 0;
+      const paint = () => { g.fillStyle = cols[k]; g.fillRect(0, 0, 320, 240); g.fillStyle = '#000'; g.font = '40px sans-serif'; g.fillText('HRH 5201' + k, 20, 130); };
+      paint();
+      const rec = new MediaRecorder(cv.captureStream(30), { mimeType: 'video/webm' }); const chunks = [];
+      rec.ondataavailable = e => chunks.push(e.data);
+      const iv = setInterval(paint, 33); rec.start(100);
+      for (let j = 0; j < 5; j++) { k = j; paint(); await new Promise(r => setTimeout(r, 1200)); }
+      rec.stop(); await new Promise(r => { rec.onstop = r; }); clearInterval(iv);
+      const buf = new Uint8Array(await new Blob(chunks, { type: 'video/webm' }).arrayBuffer());
+      let s = ''; for (let i = 0; i < buf.length; i += 8192) s += String.fromCharCode.apply(null, buf.subarray(i, i + 8192));
+      return btoa(s);
+    });
+    await pv.setInputFiles('#vidFile', { name: 'line.webm', mimeType: 'video/webm', buffer: Buffer.from(b64, 'base64') });
+    for (let i = 0; i < 60 && !(await pv.isVisible('#btnVidRead')); i++) await pv.waitForTimeout(250);
+    const msg1 = await pv.textContent('#vidMsg');
+    check('動画: 場面ごとに1コマ選び、読む前に費用の目安を出す（APIはまだ呼ばない）', msg1.includes('5 コマを選びました') && msg1.includes('約 5〜15 円') && global.CLAUDE_REQS.length === 0, msg1);
+    await pv.click('#btnVidRead');
+    for (let i = 0; i < 60 && !(await pv.isVisible('#btnVidSave')); i++) await pv.waitForTimeout(250);
+    const rows = await pv.$$eval('.vid-row', els => els.map(e => ({ t: e.textContent, ck: e.querySelector('input').checked, dis: e.querySelector('input').disabled })));
+    check('動画: 5コマを読んで、続けて同じ番号はまとめて4本', global.CLAUDE_REQS.length === 5 && rows.length === 4, JSON.stringify(rows));
+    check('動画: 「高」と「中×2コマ一致」はチェック済み、W検算NGは保存不可、種別違いは未チェック',
+      rows[0] && rows[0].ck && rows[1].ck && rows[1].t.includes('2コマで一致') && rows[2].dis && rows[2].t.includes('W検算') && !rows[3].ck && !rows[3].dis && rows[3].t.includes('容器種別'), JSON.stringify(rows));
+    if (process.env.SHOT_DIR) await pv.screenshot({ path: process.env.SHOT_DIR + '/video_list.png' });   // 見た目の確認用（SHOT_DIR を付けて実行したときだけ）
+    await pv.click('#btnVidSave'); await pv.waitForTimeout(1500);
+    const ent = c.getLot(L.lotId).entries;
+    check('動画: チェックした2本を刻印のWで保存（ほかは保存しない）', ent['52011'] === 16.7 && ent['52012'] === 16.7 && ent['52013'] === undefined && ent['52014'] === undefined, JSON.stringify(ent));
+    const ks = m.ss.getSheetByName('刻印記録'), kv = ks.getRange(2, 1, ks.getLastRow() - 1, 21).getValues();
+    check('動画: 刻印記録に「video」で残す', kv.length === 2 && kv.every(r => r[11] === 'video'), JSON.stringify(kv.map(r => r[2] + ':' + r[11])));
+    await pv.click('#btnVidAll'); await pv.waitForTimeout(100);
+    await pv.click('#btnVidSave'); await pv.waitForTimeout(1500);
+    check('動画: 「全部チェック」で残りの保存できる分（種別違い）も保存、W検算NGは保存しない', c.getLot(L.lotId).entries['52014'] === 16.7 && c.getLot(L.lotId).entries['52013'] === undefined);
+    await pv.click('#btnVidClose'); await pv.waitForTimeout(200);
+    check('動画: 閉じると入力画面に戻る', await pv.isHidden('#vidPanel') && await pv.isVisible('#entry'));
+    await pv.close();
+  }
   await browser.close();
 
   const failed = results.filter(r => !r.ok).length;
