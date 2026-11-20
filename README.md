@@ -34,6 +34,25 @@ Apps Script のウェブアプリは Google の枠（iframe）の中で動くた
 - 止まった容器ごとに1回（「中」なら2回）送ります。読めない場面は2回でやめ、場面が変わるまで送りません。
 - 1回の読み取りに数秒かかります。
 
+## このコピーの本番情報
+
+- スクリプトID: `1zMP914Nb9n_rSxzQsc5GLAlIkFzxnEgHZNePQBSLFSOXuk2MnIE2viS8`（`.clasp.json`）
+- ウェブアプリ（デプロイID）: `AKfycbwRPkVmInQXbMiLNT6xY3c0nVcW6WSMQmX9lUD5ouk5T6grcrLYqup1Dp5dkLLYzCA1`
+- URL: `https://script.google.com/a/macros/nodagumi40.com/s/AKfycbwRPkVmInQXbMiLNT6xY3c0nVcW6WSMQmX9lUD5ouk5T6grcrLYqup1Dp5dkLLYzCA1/exec`
+- 更新は同じデプロイIDで（新しいデプロイを作るとURLが変わり、iPadのホーム画面から開けなくなる）:
+
+  ```bash
+  npm run check && npm test && clasp push --force && clasp create-version "変更内容"
+  ```
+
+  ```bash
+  clasp update-deployment AKfycbwRPkVmInQXbMiLNT6xY3c0nVcW6WSMQmX9lUD5ouk5T6grcrLYqup1Dp5dkLLYzCA1 -V <版> -d "変更内容"
+  ```
+
+| 版 | 日付 | 内容 |
+|---|---|---|
+| 1 | 2026-11-20 | 初版（lpg-weight-app v137 のコピー＋カメラで刻印を読む） |
+
 ## セットアップ（コピーの手順に追加するもの）
 
 基本は元アプリの引き継ぎ書「コピーの手順」と同じです（新しいスプレッドシート＋新しいGASプロジェクト＋新しいデプロイ）。このリポジトリでは、本番のIDはすでに外してあります。
