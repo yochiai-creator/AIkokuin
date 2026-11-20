@@ -326,9 +326,11 @@
   // 刻印は肩部に「下にふくらむ弧」で並ぶ。型は viewBox（VB）の中に、中心 (500, ARC_CY) の円弧として描く。
   // 曲がり具合は現場の写真（50kg HEP 36815）で合わせた: 下の段の半径に対し、半分の幅 ≈ 0.58、段の間隔 ≈ 0.12、文字の高さ ≈ 0.075。
   // 標準2段（20kg以外）: 上の段「LPガス V値 TP3.0M」、下の段「記号 番号 W値 年月」、その上に「※ ◇」
-  //   （現場の写真 HEP 36815 W 34.9 6-26 と同じ並び）。20kg は扇形の特殊配置で3段。
+  //   （現場の写真 HEP 36815 W 34.9 6-26 と同じ並び）。20kg は扇形の特殊配置で3段（下の KINDS['20kg']）。
   // 字体は数字 OCRB（高さ10×幅7）。型は位置合わせの目安で、文字の通る「帯」の中だけで模様を測る。
-  const ARC_CX = 500, ARC_CY = -314, VB = { x: 130, y: 70, w: 740, h: 240 };
+  // 型を描く範囲（VB）は種類ごとに、帯が全部入る大きさを計算する（20kg は弧が大きく曲がるので縦長になる）。
+  const ARC_CX = 500, ARC_CY = -314;
+  let VB = { x: 130, y: 70, w: 740, h: 240 };
   function stdKind(sym, v, w) {
     return { lines: [
       { r: 470, span: 0.09, fs: 34, text: '※    ◇' },
@@ -340,10 +342,13 @@
     '5kg': stdKind('HRH', '11.8', '6.8'),
     '8kg': stdKind('HXU', '19', '9.6'),
     '10kg': stdKind('HCY', '23.5', '11.2'),
-    '20kg': { lines: [   // 図番31SM7247: 扇形。「※」「HXC LPガス ◇ V 47」「W 16.9」「00001 12-17 TP3.0M」
-      { r: 470, span: 0.50, fs: 42, text: 'HXC LPガス  ◇  V 47' },
-      { r: 530, span: 0.20, fs: 44, text: 'W 16.9', shift: 0.12 },
-      { r: 600, span: 0.60, fs: 46, text: '00001  12-17  TP3.0M' }
+    // 20kg（図番31SM7247）: 3段とも同じ中心の弧。配置図の文字の位置から中心と半径を出した（点のずれは数px以内）。
+    //   外の段「記号 番号 年月 TP3.0M」（両端が急に上がる）、真ん中「LPガス … W値」、内「※ ◇ V 47」。
+    //   記号は現行の HXP（配置図の見本は過去の世代の HXC）。a0〜a1: 真下からの角度（右が正）
+    '20kg': { lines: [
+      { r: 438, a0: -0.65, a1: 0.35, fs: 56, text: '※       ◇    V 47' },
+      { r: 514, a0: -0.63, a1: 0.62, fs: 64, text: 'LPガス              W 16.9' },
+      { r: 600, a0: -0.89, a1: 1.01, fs: 64, text: 'HXP    00001    12-17   TP3.0M' }
     ] },
     '20kg三部制': stdKind('HHL', '47', '17.5'),
     '30kg': stdKind('HAM', '70.5', '23.9'),
@@ -352,10 +357,30 @@
     '50kg S付': stdKind('HHZ', '117.5', '36.2')
   };
   function kindDef() { return KINDS[cfg.kind] || KINDS['50kg']; }
+  // 段の角度の中心（shift）と半分の幅（span）。a0〜a1 で書いた段もこれで扱う
+  Object.keys(KINDS).forEach(function(k) {
+    KINDS[k].lines.forEach(function(L) { if (L.a0 !== undefined) { L.shift = (L.a0 + L.a1) / 2; L.span = (L.a1 - L.a0) / 2; } });
+    // 型を描く範囲: 帯（ベースラインの少し外〜文字の高さの内側）が全部入る長方形＋余白
+    let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+    KINDS[k].lines.forEach(function(L) {
+      const c = L.shift || 0;
+      for (let i = 0; i <= 20; i++) {
+        const a = c - L.span + 2 * L.span * i / 20;
+        [L.r + L.fs * 0.2, L.r - L.fs * 1.0].forEach(function(r) {
+          const x = ARC_CX + r * Math.sin(a), y = ARC_CY + r * Math.cos(a);
+          x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
+        });
+      }
+    });
+    const m = 12;
+    KINDS[k].vb = { x: Math.round(x0 - m), y: Math.round(y0 - m), w: Math.round(x1 - x0 + 2 * m), h: Math.round(y1 - y0 + 2 * m) };
+  });
+  function setVB() { VB = kindDef().vb; $('tmpl').setAttribute('viewBox', VB.x + ' ' + VB.y + ' ' + VB.w + ' ' + VB.h); }
   // 弧の上の点（a: 真下からの角度、右が正）
   function arcPt(r, a) { return { x: ARC_CX + r * Math.sin(a), y: ARC_CY + r * Math.cos(a) }; }
   function drawTemplate() {
     const svg = $('tmpl'), k = kindDef(), NS = 'http://www.w3.org/2000/svg';
+    setVB();
     svg.innerHTML = '';
     if (cfg.mode !== 'flow') return;
     const defs = document.createElementNS(NS, 'defs'); svg.appendChild(defs);
@@ -389,6 +414,7 @@
   function bandOf(W, H) {
     const key = W + 'x' + H + ':' + cfg.kind;
     if (bandKey === key) return bandMask;
+    VB = kindDef().vb;
     const m = new Uint8Array(W * H), k = kindDef();
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
       const vx = VB.x + (x + 0.5) / W * VB.w, vy = VB.y + (y + 0.5) / H * VB.h;
@@ -424,6 +450,7 @@
   let fitPts = null, fitKey = '';
   function fitPoints() {
     if (fitKey === cfg.kind) return fitPts;
+    VB = kindDef().vb;
     const k = kindDef(), band = [], gap = [], gapNear = [];
     const toUV = function(px, py) { return [(px - VB.x) / VB.w - 0.5, (py - VB.y) / VB.h - 0.5]; };
     k.lines.forEach(function(L) {
@@ -859,7 +886,7 @@
   };
   function fitZoneToTemplate() {
     const v = $('video'), vw = v.videoWidth || 16, vh = v.videoHeight || 9, z = cfg.zone;
-    const h = Math.min(0.9, z.w * vw * VB.h / VB.w / vh), cy = z.y + z.h / 2;
+    const vb = kindDef().vb, h = Math.min(0.9, z.w * vw * vb.h / vb.w / vh), cy = z.y + z.h / 2;
     z.h = h; z.y = clamp(cy - h / 2, 0, 1 - h);
     store.set('zone', z); layoutZone();
   }
