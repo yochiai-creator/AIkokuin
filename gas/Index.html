@@ -321,7 +321,7 @@
 <div class="sp-sub">読み込み中…</div></div>
 <script>window.SPLASH_T0 = Date.now();</script>
 <header>
-  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v9（LPG刻印カメラ）</span></h1>
+  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v10（テスト版: ロットのロックなし）</span></h1>
   <span class="user" id="workerBadge"></span>
   <span class="user" id="user"></span>
   <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
@@ -801,6 +801,8 @@
       const o = document.createElement('option'); o.value = saved; o.textContent = saved; sel.appendChild(o);
     }
     sel.value = S.workers.indexOf(saved) >= 0 || !S.workers.length ? saved : '';
+    // AIkokuin: 入力者が1人だけなら最初から選んでおく（開く場所が変わるたびに選び直さなくてよい）
+    if (!sel.value && S.workers.length === 1) sel.value = S.workers[0];
     $('fDevice').value = store.get('lpg.device');
     $('workerMsg').textContent = S.workers.length ? '' : '「入力者」シートにスタッフ名を登録すると、ここで選べるようになります。';
     updateWorkerBadge();

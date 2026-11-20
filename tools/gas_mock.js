@@ -28,7 +28,7 @@ class Range{constructor(sh,r,c,nr,nc){Object.assign(this,{sh,r,c,nr,nc})}
 let ssid=1;const SSS={};class SS{constructor(name){this.sheets=[];this.tz='America/Los_Angeles';this.id='SS'+(ssid++);this.name=name;SSS[this.id]=this} getSpreadsheetTimeZone(){return this.tz} setSpreadsheetTimeZone(z){this.tz=z} getId(){return this.id} getUrl(){return 'https://docs.google.com/spreadsheets/d/'+this.id} getSheetByName(n){return this.sheets.find(s=>s.name===n)||null}
  insertSheet(n){const s=new Sheet(this,n);this.sheets.push(s);return s} setActiveSheet(s){this.active=s;return s} moveActiveSheet(i){const s=this.active;if(!s)return;this.sheets=this.sheets.filter(x=>x!==s);this.sheets.splice(i-1,0,s)} getNumSheets(){return this.sheets.length} deleteSheet(sh){this.sheets=this.sheets.filter(x=>x!==sh)} getSheets(){return this.sheets.slice()}}
 function load(){
- const ss=new SS(); const props={}; const cache={};
+ const ss=new SS(); const props={LOCK:'on'}; const cache={};   // ロックの試験のため、テストでは LOCK=on（AIkokuin の既定は off）
  const tpl=ss.insertSheet('書式_成績表'); tpl.set(1,1,'高圧ガス容器検査成績表\n\n※容器の製造年月を目視確認の上、容器番号前にチェックを入れる'); tpl.set(5,2,'001'); tpl.set(5,4,3); tpl.set(5,6,',');
  const ctx={console,Date,Math,JSON,
   SpreadsheetApp:{BorderStyle:{SOLID_THICK:'thick',SOLID_MEDIUM:'medium'},getActiveSpreadsheet:()=>ss,openById:(id)=>SSS[id]||ss,create:(n)=>{const x=new SS(n);x.insertSheet('シート1');global.ARCHIVES.push(x);return x},flush(){},

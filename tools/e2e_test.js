@@ -1259,6 +1259,22 @@ function check(name, ok, detail) {
     const lg = m.ss.getSheetByName('入力記録'), rows = lg.getRange(2, 1, lg.getLastRow() - 1, 18).getValues().filter(r => r[2] === C.lotId);
     check('まとめて保存: 100本目で全数の知らせ（完了はしない）、その後の入力も入る', out.results.length === 101 && out.results[99].full === true && !out.results[99].completed && !out.results.slice(0, 99).some(r => r.full) && !out.error && rows.length === 101 && c.findLot_(C.lotId).status === '入力中', out.error + ' ' + rows.length);
   }
+  // ---- ロットのロック: テスト版（AIkokuin）は既定で使わない（LOCK が on のときだけ）
+  {
+    const m = load(), c = m.ctx; c.setup();
+    const L = c.createLot({ prefix: 'LK', start: '00101', kind: '20kg' });
+    c.PropertiesService.getScriptProperties().deleteProperty('LOCK');
+    c.claimInput({ devId: 'A', worker: '山田', device: 'iPad-1' });
+    let err = '';
+    try { c.claimInput({ devId: 'B', worker: '佐藤', device: 'iPad-2' }); c.recordEntry({ lotId: L.lotId, serial: '00101', mass: 16.7, devId: 'B', worker: '佐藤', device: 'iPad-2' }); } catch (e) { err = e.message; }
+    check('ロックなし（LOCK 未設定）: 別のiPadが入力中でも入力を始められて保存できる', !err && c.getLot(L.lotId).entries['00101'] === 16.7 && JSON.stringify(c.getClaims({ devId: 'B' })) === '{}', err);
+    c.PropertiesService.getScriptProperties().setProperty('LOCK', 'on');
+    c.claimInput({ devId: 'A', worker: '山田', device: 'iPad-1' });
+    err = ''; try { c.claimInput({ devId: 'B', worker: '佐藤', device: 'iPad-2' }); } catch (e) { err = e.message; }
+    check('LOCK=on: 別のiPadが入力中なら断る（元の動き）', err.includes('入力中です'), err);
+    err = ''; try { c.claimInput({ devId: 'C', worker: '山田', device: '' }); } catch (e) { err = e.message; }
+    check('LOCK=on: 同じGoogleアカウント・同じ入力者なら、別の画面から開いても締め出さない', !err, err);
+  }
   // ---- 刻印の読み取り（サーバー: readKokuin → Claude API）。APIの返事は模擬
   {
     const m = load(), c = m.ctx; c.setup();

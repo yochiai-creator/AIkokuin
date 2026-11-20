@@ -4,7 +4,13 @@ const CLAIM_KEY = 'LOT_CLAIMS';
 const CLAIM_IDLE_MS = 10 * 60 * 1000;
 const CLAIM_ALL = '*';   // 入力中のiPad（全部のロット）。ロットIDと重ならない
 
+// AIkokuin（テスト版）: ロックは既定で使わない。スクリプトプロパティ LOCK を on にしたときだけ働く
+function claimsOn_() {
+  try { return PropertiesService.getScriptProperties().getProperty('LOCK') === 'on'; } catch (e) { return false; }
+}
+
 function claimCache_() {
+  if (!claimsOn_()) return null;   // 使用中を記録しない・読まない（どのiPadからも入力できる）
   try { return CacheService.getScriptCache(); } catch (e) { return null; }
 }
 
@@ -24,10 +30,18 @@ function writeClaims_(m) {
   if (c) c.put(CLAIM_KEY, JSON.stringify(m), 6 * 3600);
 }
 
-// 同じiPadか（印が消えて作り直された場合も、入力者と端末名が同じなら同じiPadとみなす）
+// 同じiPadか（印が消えて作り直された場合も、入力者と端末名が同じなら同じiPadとみなす）。
+// AIkokuin: 同じGoogleアカウントで同じ入力者なら同じ人とみなす（Safari と Claude アプリの中のブラウザなど、
+// 開く場所が変わると印が別になり、同じ人が10分締め出されていた）
 function sameDevice_(cl, who) {
   if (cl.devId === String(who.devId)) return true;
+  if (!!cl.worker && cl.worker === String(who.worker || '') && !!cl.acct && cl.acct === claimAccount_()) return true;
   return !!cl.worker && !!cl.device && cl.worker === String(who.worker || '') && cl.device === String(who.device || '');
+}
+let CLAIM_ACCT_ = null;
+function claimAccount_() {
+  if (CLAIM_ACCT_ === null) { try { CLAIM_ACCT_ = Session.getActiveUser().getEmail() || ''; } catch (e) { CLAIM_ACCT_ = ''; } }
+  return CLAIM_ACCT_;
 }
 
 function claimText_(cl) {
@@ -51,7 +65,7 @@ function checkClaim_(lotId, who, take) {
   if (take) {
     const now = Date.now();
     if (cl && cl.devId === String(who.devId) && now - cl.at < CLAIM_REFRESH_MS && all && all.devId === String(who.devId) && now - all.at < CLAIM_REFRESH_MS) return;
-    const me = { devId: String(who.devId), worker: String(who.worker || ''), device: String(who.device || ''), at: now };
+    const me = { devId: String(who.devId), worker: String(who.worker || ''), device: String(who.device || ''), acct: claimAccount_(), at: now };
     m[lotId] = me; m[CLAIM_ALL] = me;
     writeClaims_(m);
   }
@@ -96,7 +110,7 @@ function claimInput(who) {
     CLAIMS_EXEC_ = null;
     const m = readClaims_(), all = m[CLAIM_ALL];
     if (all && !sameDevice_(all, who)) throw new Error(claimText_(all) + ' が入力中です。そのiPadでホームに戻るか、10分入力がなければ入力できるようになります');
-    m[CLAIM_ALL] = { devId: String(who.devId), worker: String(who.worker || ''), device: String(who.device || ''), at: Date.now() };
+    m[CLAIM_ALL] = { devId: String(who.devId), worker: String(who.worker || ''), device: String(who.device || ''), acct: claimAccount_(), at: Date.now() };
     writeClaims_(m);
     return getClaims(who);
   } finally {
