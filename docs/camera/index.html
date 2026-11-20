@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="AI刻印カメラ">
+<meta name="theme-color" content="#1f2a5c">
+<link rel="manifest" href="manifest.json">
+<title>AI刻印カメラ</title>
+<style>
+  :root { --navy: #1f2a5c; --ok: #1e7a4c; --ng: #b94a3d; --warn: #b07a00; --line: #d8e0ee; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #000; color: #fff; font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; overflow: hidden; }
+  button { font: inherit; cursor: pointer; }
+  #stage { position: fixed; inset: 0 0 auto 0; bottom: 132px; background: #000; }
+  #video { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #zone { position: absolute; border: 3px solid #ffd34d; border-radius: 6px; touch-action: none; box-shadow: 0 0 0 9999px rgba(0,0,0,.25); }
+  #zone.armed { border-color: #4fd18b; }
+  #zone.shot { border-color: #fff; background: rgba(255,255,255,.35); }
+  #zone .lbl { position: absolute; left: 4px; top: 2px; font-size: 13px; font-weight: 700; text-shadow: 0 1px 2px #000; }
+  #zone .handle { position: absolute; right: -14px; bottom: -14px; width: 28px; height: 28px; border-radius: 50%; background: #ffd34d; border: 2px solid #000; }
+  #state { position: absolute; left: 10px; top: calc(env(safe-area-inset-top) + 10px); right: 10px; font-size: 18px; font-weight: 800;
+    padding: 8px 12px; border-radius: 10px; background: rgba(31,42,92,.85); }
+  #state.ok { background: rgba(30,122,76,.9); } #state.warn { background: rgba(176,122,0,.92); } #state.ng { background: rgba(185,74,61,.92); }
+  #meter { position: absolute; left: 10px; right: 10px; bottom: 8px; height: 6px; background: rgba(255,255,255,.2); border-radius: 3px; overflow: hidden; }
+  #meter > div { height: 100%; width: 0; background: #ffd34d; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; height: 132px; background: #111827; padding: 8px 10px calc(env(safe-area-inset-bottom) + 8px); }
+  .row { display: flex; gap: 8px; align-items: center; }
+  .row + .row { margin-top: 8px; }
+  .btn { border: 1px solid #3b4675; background: #2d3a78; color: #fff; border-radius: 10px; padding: 10px 14px; font-size: 16px; font-weight: 700; white-space: nowrap; }
+  .btn.main { background: #1e7a4c; border-color: #1e7a4c; flex: 1; font-size: 18px; }
+  .btn.stop { background: #b94a3d; border-color: #b94a3d; }
+  .btn.sub { background: transparent; font-weight: 400; font-size: 14px; }
+  .btn:disabled { opacity: .4; }
+  #count { font-size: 15px; min-width: 90px; }
+  #thumbs { display: flex; gap: 4px; overflow-x: auto; flex: 1; height: 44px; }
+  #thumbs img { height: 44px; border-radius: 4px; }
+  #settings { position: fixed; right: 10px; bottom: 140px; width: min(360px, calc(100% - 20px)); background: #fff; color: #1b2240; border-radius: 12px; padding: 14px; z-index: 5; }
+  #settings label { display: block; font-size: 14px; margin: 10px 0 4px; font-weight: 700; }
+  #settings input[type=range] { width: 100%; }
+  #settings .v { float: right; font-weight: 400; }
+  #settings .note { font-size: 12px; color: #6b7591; line-height: 1.6; margin-top: 8px; }
+  .hidden { display: none !important; }
+  #err { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 24px; text-align: center; font-size: 17px; line-height: 1.7; background: #1f2a5c; z-index: 9; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="video" playsinline muted autoplay></video>
+  <div id="zone"><span class="lbl">検知範囲</span><span class="handle" id="handle"></span></div>
+  <div id="state">カメラを起動しています…</div>
+  <div id="meter"><div id="meterBar"></div></div>
+</div>
+<div id="bar">
+  <div class="row">
+    <button class="btn main" id="btnRun" disabled>▶ 開始</button>
+    <button class="btn" id="btnSave" disabled>📤 写真に保存</button>
+    <button class="btn sub" id="btnSet">⚙</button>
+  </div>
+  <div class="row">
+    <span id="count">0 枚</span>
+    <div id="thumbs"></div>
+    <button class="btn sub" id="btnShot">手動で撮る</button>
+    <button class="btn sub" id="btnOpen">AIkokuinへ</button>
+  </div>
+</div>
+<div id="settings" class="hidden">
+  <label>撮り方</label>
+  <div class="row" style="color:#1b2240;font-size:15px">
+    <label style="margin:0;font-weight:400"><input type="radio" name="mode" value="flow"> 流れる（刻印が枠を通ったら撮る）</label>
+  </div>
+  <div class="row" style="color:#1b2240;font-size:15px">
+    <label style="margin:0;font-weight:400"><input type="radio" name="mode" value="stop"> 止まる（枠の中で止まったら撮る）</label>
+  </div>
+  <label>1本あたりの枚数 <span class="v" id="vBurst"></span></label>
+  <input type="range" id="sBurst" min="1" max="4" step="1">
+  <div id="stillBox">
+  <label>止まってから撮るまで <span class="v" id="vStill"></span></label>
+  <input type="range" id="sStill" min="200" max="2000" step="100">
+  </div>
+  <label>動きの感度 <span class="v" id="vSens"></span></label>
+  <input type="range" id="sSens" min="1" max="10" step="1">
+  <div class="note">
+    iPadを固定して使います（枠をドラッグで移動、右下の丸で大きさ）。<br>
+    <b>流れる</b>: 枠を<b>刻印が通る位置</b>に合わせます（刻印の文字がちょうど収まるくらい）。刻印が枠を通るあいだで一番くっきりしたコマ（ぶれが少なく枠の中央にある瞬間）を、通り過ぎたときに撮ります。「開始」を押したら最初の1秒は刻印のない状態を覚えるので、枠に刻印がないときに押してください。<br>
+    <b>止まる</b>: 容器が止まる台の上を枠で囲み、台を空にして「開始」。容器が入って止まると撮り、どくまで同じ容器は撮りません。<br>
+    撮った写真は「📤 写真に保存」で写真アプリへ。AIkokuin の「📂 選ぶ」でまとめて選ぶと読み取ります。
+  </div>
+  <div class="row" style="margin-top:10px"><button class="btn" id="btnSetClose" style="flex:1">閉じる</button></div>
+</div>
+<div id="err" class="hidden"></div>
+
+<script>
+(function() {
+  'use strict';
+  // AI刻印カメラ: 刻印が枠を通ったら（流れる）、または容器が枠の中で止まったら（止まる）自動で撮る
+  // （AIkokuin の「📂 選ぶ」で読むための写真を作る）。流れるモードは下の「流れるモード」の節。止まるモード:
+  //  - 範囲の中を48×36の白黒に縮めて、前のコマとの差（動き）と、空の台・前に撮った容器との差を見る
+  //  - 空の台と違う物があり、動きが「止まってから」の時間以上おさまったら、間をあけて何枚か撮る
+  //  - 撮った容器から十分に変わる（どく・次の容器が来る）まで次は撮らない
+  //  - 写真には Exif の撮影日時（1秒未満まで）を書き込む（AIkokuin はこの順に並べて読む）
+  const AIKOKUIN_URL = 'https://script.google.com/a/macros/nodagumi40.com/s/AKfycbwRPkVmInQXbMiLNT6xY3c0nVcW6WSMQmX9lUD5ouk5T6grcrLYqup1Dp5dkLLYzCA1/exec';
+  const TICK_MS = 100;
+  const SIG_W = 48, SIG_H = 36;
+  const PRESENT = 14;          // 空の台・前に撮った容器から「違う物がある」とみなす差
+  const BURST_GAP_MS = 350;    // 1本で何枚か撮るときの間隔
+  const MAX_SHOTS = 400;       // ためておく枚数の上限（iPadのメモリのため）
+  const $ = function(id) { return document.getElementById(id); };
+
+  // ---------- 設定（この端末に記憶） ----------
+  const store = {
+    get: function(k, d) { try { const v = localStorage.getItem('aikc.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set: function(k, v) { try { localStorage.setItem('aikc.' + k, JSON.stringify(v)); } catch (e) { /* 記憶できなくても動く */ } }
+  };
+  const cfg = {
+    burst: store.get('burst', 2),
+    stillMs: store.get('stillMs', 600),
+    sens: store.get('sens', 5),
+    zone: store.get('zone', { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }),  // 映像に対する割合
+    mode: store.get('mode', 'flow')     // flow: 流れる（刻印が枠を通ったら） / stop: 止まる（止まったら）
+  };
+  function moveTh() { return 11 - cfg.sens; }          // 感度5 → 差6 で「動いた」
+
+  // ---------- 状態 ----------
+  const S = { running: false, bg: null, prev: null, lastShotSig: null, armed: true, stillSince: 0, shooting: false, shots: [], stream: null, wake: null,
+    // 流れるモード
+    hist: [], prevSm: null, learnUntil: 0, pass: null, passes: 0 };
+  window.__aikc = S;   // 動作確認用
+
+  function setState(text, kind) { const el = $('state'); el.textContent = text; el.className = kind || ''; }
+
+  // ---------- カメラ ----------
+  function startCamera() {
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return showErr('このブラウザではカメラが使えません。iPad の Safari で開いてください。');
+    navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } })
+      .then(function(st) {
+        S.stream = st;
+        const v = $('video'); v.srcObject = st;
+        const p = v.play(); if (p && p.catch) p.catch(function() {});
+        v.addEventListener('loadedmetadata', layoutZone);
+        $('btnRun').disabled = false;
+        setState('検知範囲を台の上に合わせ、台を空にして「開始」');
+        setInterval(tick, TICK_MS);
+        flowLoop();
+      })
+      .catch(function(e) { showErr('カメラを使えません（' + (e && e.name || e) + '）。<br>Safari の設定でカメラを許可してから、開き直してください。'); });
+  }
+  function showErr(html) { const el = $('err'); el.innerHTML = html; el.classList.remove('hidden'); }
+
+  // ---------- 検知範囲（映像に対する割合 ⇔ 画面の位置） ----------
+  function videoBox() {
+    const v = $('video'), st = $('stage').getBoundingClientRect();
+    const vw = v.videoWidth || 16, vh = v.videoHeight || 9, k = Math.min(st.width / vw, st.height / vh);
+    return { left: (st.width - vw * k) / 2, top: (st.height - vh * k) / 2, w: vw * k, h: vh * k };
+  }
+  function layoutZone() {
+    const b = videoBox(), z = cfg.zone, el = $('zone');
+    el.style.left = (b.left + z.x * b.w) + 'px'; el.style.top = (b.top + z.y * b.h) + 'px';
+    el.style.width = (z.w * b.w) + 'px'; el.style.height = (z.h * b.h) + 'px';
+  }
+  window.addEventListener('resize', layoutZone);
+  (function dragZone() {
+    let mode = '', sx = 0, sy = 0, z0 = null;
+    $('zone').addEventListener('pointerdown', function(e) {
+      mode = e.target.id === 'handle' ? 'size' : 'move'; sx = e.clientX; sy = e.clientY; z0 = Object.assign({}, cfg.zone);
+      this.setPointerCapture(e.pointerId); e.preventDefault();
+    });
+    $('zone').addEventListener('pointermove', function(e) {
+      if (!mode) return;
+      const b = videoBox(), dx = (e.clientX - sx) / b.w, dy = (e.clientY - sy) / b.h, z = cfg.zone;
+      if (mode === 'move') { z.x = clamp(z0.x + dx, 0, 1 - z.w); z.y = clamp(z0.y + dy, 0, 1 - z.h); }
+      else { z.w = clamp(z0.w + dx, 0.1, 1 - z.x); z.h = clamp(z0.h + dy, 0.1, 1 - z.y); }
+      layoutZone();
+    });
+    $('zone').addEventListener('pointerup', function() {
+      if (!mode) return; mode = '';
+      store.set('zone', cfg.zone);
+      if (S.running) { S.bg = null; S.hist = []; S.pass = null; S.learnUntil = Date.now() + 1000; setState('枠を変えたので、覚え直します', 'warn'); }
+    });
+  })();
+  function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+  // ---------- 範囲の中を縮めた白黒の写し ----------
+  const sigCanvas = document.createElement('canvas'); sigCanvas.width = SIG_W; sigCanvas.height = SIG_H;
+  function zoneSig() {
+    const v = $('video'); if (!v.videoWidth) return null;
+    const z = cfg.zone, g = sigCanvas.getContext('2d', { willReadFrequently: true });
+    g.drawImage(v, z.x * v.videoWidth, z.y * v.videoHeight, z.w * v.videoWidth, z.h * v.videoHeight, 0, 0, SIG_W, SIG_H);
+    const d = g.getImageData(0, 0, SIG_W, SIG_H).data, out = new Float32Array(SIG_W * SIG_H);
+    for (let i = 0; i < out.length; i++) out[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
+    return out;
+  }
+  function diff(a, b) {
+    if (!a || !b) return 999;
+    let t = 0; for (let i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]);
+    return t / a.length;
+  }
+
+  // ---------- 見張り ----------
+  function tick() {
+    if (cfg.mode === 'flow') return;
+    const sig = zoneSig(); if (!sig) return;
+    const motion = diff(sig, S.prev); S.prev = sig;
+    $('meterBar').style.width = Math.min(100, motion / (moveTh() * 2) * 100) + '%';
+    if (!S.running || S.shooting) return;
+    const now = Date.now();
+    if (!S.bg) {   // 空の台を覚える（動きがおさまってから）
+      if (motion < moveTh() / 2) { S.bg = sig; S.armed = true; S.stillSince = 0; setState('見張り中: 容器が範囲に入って止まったら撮ります', 'ok'); }
+      return;
+    }
+    const fromBg = diff(sig, S.bg), fromLast = diff(sig, S.lastShotSig);
+    const present = fromBg >= PRESENT;
+    // 撮った容器から十分に変わったら（どいた・次が来た）、また撮れるようにする
+    if (!S.armed && (fromLast >= PRESENT || !present)) { S.armed = true; }
+    $('zone').classList.toggle('armed', S.armed && present);
+    if (motion >= moveTh()) { S.stillSince = 0; if (present) setState('動きあり…止まるのを待っています'); return; }
+    if (!present) {
+      setState('見張り中: 容器が範囲に入って止まったら撮ります', 'ok');
+      // 空のまま長く止まっていたら、明るさの変化に合わせて空の台を覚え直す
+      if (!S.stillSince) S.stillSince = now; else if (now - S.stillSince > 3000) { S.bg = sig; S.stillSince = now; }
+      return;
+    }
+    if (!S.armed) { setState('撮影済み: 容器をどかすと次を撮ります', 'ok'); return; }
+    if (!S.stillSince) S.stillSince = now;
+    if (now - S.stillSince >= cfg.stillMs) burst(sig);
+    else setState('止まりました…撮影します');
+  }
+
+  // ---------- 流れるモード: 刻印が枠を通ったら撮る ----------
+  // 枠の中の「細かい模様の量」（縮めた白黒と、そのまわり3×3の平均との差）を毎コマ測る。打刻の文字が入ると上がる。
+  // 現場の写真（50kg HEP）で、刻印にぴったりの枠は塗装だけのときの 1.34〜1.73 倍だった（2026-11-20）。
+  // ふだんの値＝直近5秒の低い方から3割の値。それより riseK() 倍以上になったら「通過中」。通過中は模様が多く
+  // ぶれの少ないコマを1本あたりの枚数ぶん覚えておき（近すぎるコマは良い方だけ）、下がったら（通り過ぎたら）写真にする。
+  // 床のすき間や光った肩で余分に撮れることはあるが、読み取り側で「読めない」「同じ番号」としてまとめられる（撮り逃すよりよい）
+  const TW = 192;
+  const texCanvas = document.createElement('canvas');
+  function zoneTexture() {
+    const v = $('video'); if (!v.videoWidth) return null;
+    const z = cfg.zone, zw = z.w * v.videoWidth, zh = z.h * v.videoHeight;
+    const W = TW, H = Math.max(8, Math.min(96, Math.round(TW * zh / zw)));
+    if (texCanvas.width !== W || texCanvas.height !== H) { texCanvas.width = W; texCanvas.height = H; }
+    const g = texCanvas.getContext('2d', { willReadFrequently: true });
+    g.drawImage(v, z.x * v.videoWidth, z.y * v.videoHeight, zw, zh, 0, 0, W, H);
+    const d = g.getImageData(0, 0, W, H).data, a = new Float32Array(W * H);
+    for (let i = 0; i < a.length; i++) a[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
+    let t = 0, n = 0, tx = 0;
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      const s9 = a[i - W - 1] + a[i - W] + a[i - W + 1] + a[i - 1] + a[i] + a[i + 1] + a[i + W - 1] + a[i + W] + a[i + W + 1];
+      const e = Math.abs(9 * a[i] - s9);
+      t += e; tx += e * x; n++;
+    }
+    // ぶれ（前のコマとの差）用に、粗い写しも返す
+    const sm = new Float32Array(48);
+    for (let k = 0; k < 48; k++) { const x = Math.floor((k % 8) * W / 8), y = Math.floor(Math.floor(k / 8) * H / 6); sm[k] = a[y * W + x]; }
+    // cx: 模様の左右の重心（0〜1）。0.5 に近いほど刻印が枠の真ん中
+    return { tex: t / n / 9, sm: sm, cx: t ? tx / t / (W - 1) : 0.5 };
+  }
+  function riseK() { return Math.max(1.05, 1.5 - cfg.sens * 0.05); }   // 感度5 → ふだんの1.25倍で「入った」
+  const MIN_PASS_MS = 80, MAX_PASS_MS = 4000, NEAR_MS = 100, BASE_MS = 5000;
+  function baseline(now) {
+    S.hist = S.hist.filter(function(h) { return now - h.t <= BASE_MS; });
+    const vals = S.hist.map(function(h) { return h.v; }).sort(function(x, y) { return x - y; });
+    return vals.length ? vals[Math.floor(vals.length * 0.3)] : 0;
+  }
+  function flowFrame() {
+    if (!S.running || cfg.mode !== 'flow') return;
+    const v = $('video'), now = Date.now();
+    const f = zoneTexture(); if (!f) return;
+    const blur = S.prevSm ? diff(f.sm, S.prevSm) : 0; S.prevSm = f.sm;
+    if (!S.pass) S.hist.push({ t: now, v: f.tex });   // 通過中の値はふだんの値に入れない
+    const base = baseline(now);
+    const hi = Math.max(base * riseK(), base + 0.3), lo = Math.max(base * (1 + (riseK() - 1) / 2), base + 0.15);
+    $('meterBar').style.width = Math.min(100, hi ? f.tex / (hi * 1.3) * 100 : 0) + '%';
+    if (now < S.learnUntil) { setState('枠の中のふだんの様子を覚えています…', 'warn'); return; }
+    if (!S.pass) {
+      if (f.tex < hi) { setState('見張り中: 刻印が枠を通ったら撮ります', 'ok'); $('zone').classList.remove('armed'); return; }
+      S.pass = { start: now, cands: [], below: 0 };
+    }
+    const p = S.pass;
+    $('zone').classList.add('armed'); setState('刻印が通過中…');
+    // 模様が多く、刻印が枠の真ん中にあり、ぶれの少ないコマほど良い
+    keepCand(p, f.tex * (1 - Math.abs(f.cx - 0.5)) - blur * 0.02, now, v);
+    if (f.tex < lo) p.below++; else p.below = 0;
+    if (p.below >= 2 || now - p.start > MAX_PASS_MS) {
+      S.pass = null;
+      if (now - p.start >= MIN_PASS_MS && p.cands.length) saveCands(p.cands);
+    }
+  }
+  // 1本あたりの枚数ぶん、くっきりしたコマを覚える（NEAR_MS 以内のコマは高い方だけ）
+  function keepCand(p, e, now, v) {
+    const near = p.cands.filter(function(c) { return now - c.t < NEAR_MS; })[0];
+    let slot = null;
+    if (near) { if (e <= near.e) return; slot = near; }
+    else if (p.cands.length < cfg.burst) { slot = { c: document.createElement('canvas') }; p.cands.push(slot); }
+    else { const low = p.cands.reduce(function(a, b) { return a.e <= b.e ? a : b; }); if (e <= low.e) return; slot = low; }
+    slot.e = e; slot.t = now; slot.at = new Date(now);
+    slot.c.width = v.videoWidth; slot.c.height = v.videoHeight;
+    slot.c.getContext('2d').drawImage(v, 0, 0);
+  }
+  function saveCands(cands) {
+    S.passes++;
+    flash(); beep();
+    cands.slice().sort(function(a, b) { return a.t - b.t; }).reduce(function(pr, c) {
+      return pr.then(function() { return saveCanvas(c.c, c.at); });
+    }, Promise.resolve()).then(function() { setState('撮影しました（' + S.passes + ' 本目・' + S.shots.length + ' 枚）', 'ok'); });
+  }
+  // 毎コマ見る（requestVideoFrameCallback が使えなければ 1/30 秒ごと）
+  function flowLoop() {
+    const v = $('video');
+    if (typeof v.requestVideoFrameCallback === 'function') {
+      const cb = function() { flowFrame(); v.requestVideoFrameCallback(cb); };
+      v.requestVideoFrameCallback(cb);
+    } else setInterval(flowFrame, 33);
+  }
+
+  function burst(sig) {
+    S.shooting = true; S.armed = false; S.lastShotSig = sig;
+    let n = 0;
+    const one = function() {
+      shoot().then(function() {
+        n++;
+        if (n < cfg.burst) setTimeout(one, BURST_GAP_MS);
+        else { S.shooting = false; S.stillSince = 0; S.lastShotSig = zoneSig() || sig; }
+      });
+    };
+    one();
+  }
+
+  // ---------- 撮る（映像の1コマをJPEGに、撮影日時を書き込む） ----------
+  function shoot() {
+    const v = $('video');
+    if (!v.videoWidth) return Promise.resolve();
+    if (S.shots.length >= MAX_SHOTS) { setState('ためた写真が ' + MAX_SHOTS + ' 枚になりました。「📤 写真に保存」してください', 'ng'); return Promise.resolve(); }
+    const at = new Date();
+    const c = document.createElement('canvas'); c.width = v.videoWidth; c.height = v.videoHeight;
+    c.getContext('2d').drawImage(v, 0, 0);
+    flash(); beep();
+    return saveCanvas(c, at).then(function() { setState('撮影しました（' + S.shots.length + ' 枚）', 'ok'); });
+  }
+  function saveCanvas(c, at) {
+    if (S.shots.length >= MAX_SHOTS) { setState('ためた写真が ' + MAX_SHOTS + ' 枚になりました。「📤 写真に保存」してください', 'ng'); return Promise.resolve(); }
+    return new Promise(function(res) { c.toBlob(res, 'image/jpeg', 0.92); }).then(function(blob) {
+      return blob.arrayBuffer().then(function(buf) {
+        const jpg = withExif(new Uint8Array(buf), at);
+        const name = 'AIK_' + stamp(at) + '.jpg';
+        const file = new File([jpg], name, { type: 'image/jpeg', lastModified: at.getTime() });
+        S.shots.push(file);
+        addThumb(c);
+        updateCount();
+      });
+    });
+  }
+  function pad(n, w) { n = String(n); while (n.length < (w || 2)) n = '0' + n; return n; }
+  function stamp(d) { return d.getFullYear() + pad(d.getMonth() + 1) + pad(d.getDate()) + '_' + pad(d.getHours()) + pad(d.getMinutes()) + pad(d.getSeconds()) + '_' + pad(d.getMilliseconds(), 3); }
+
+  // JPEG に Exif（DateTimeOriginal・SubSecTimeOriginal）を差し込む
+  function withExif(jpg, d) {
+    const dt = d.getFullYear() + ':' + pad(d.getMonth() + 1) + ':' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+    const sub = pad(d.getMilliseconds(), 3);
+    const tiff = new Uint8Array(76), v = new DataView(tiff.buffer);
+    tiff[0] = 0x49; tiff[1] = 0x49; v.setUint16(2, 42, true); v.setUint32(4, 8, true);
+    v.setUint16(8, 1, true); v.setUint16(10, 0x8769, true); v.setUint16(12, 4, true); v.setUint32(14, 1, true); v.setUint32(18, 26, true); v.setUint32(22, 0, true);
+    v.setUint16(26, 2, true);
+    v.setUint16(28, 0x9003, true); v.setUint16(30, 2, true); v.setUint32(32, 20, true); v.setUint32(36, 56, true);
+    v.setUint16(40, 0x9291, true); v.setUint16(42, 2, true); v.setUint32(44, 4, true);
+    for (let i = 0; i < 3; i++) tiff[48 + i] = sub.charCodeAt(i);
+    v.setUint32(52, 0, true);
+    for (let i = 0; i < 19; i++) tiff[56 + i] = dt.charCodeAt(i);
+    const head = [0xFF, 0xE1, 0, 0, 0x45, 0x78, 0x69, 0x66, 0, 0];
+    const len = head.length - 2 + tiff.length;
+    head[2] = len >> 8; head[3] = len & 255;
+    const out = new Uint8Array(jpg.length + head.length + tiff.length);
+    out.set(jpg.subarray(0, 2), 0); out.set(head, 2); out.set(tiff, 2 + head.length); out.set(jpg.subarray(2), 2 + head.length + tiff.length);
+    return out;
+  }
+
+  function addThumb(c) {
+    const t = document.createElement('canvas'); t.height = 44; t.width = Math.round(c.width * 44 / c.height);
+    t.getContext('2d').drawImage(c, 0, 0, t.width, t.height);
+    const img = new Image(); img.src = t.toDataURL('image/jpeg', 0.6);
+    const box = $('thumbs'); box.insertBefore(img, box.firstChild);
+    while (box.children.length > 30) box.removeChild(box.lastChild);
+  }
+  function updateCount() {
+    $('count').textContent = S.shots.length + ' 枚';
+    $('btnSave').disabled = !S.shots.length;
+    $('btnSave').textContent = '📤 写真に保存（' + S.shots.length + '）';
+  }
+  function flash() { const z = $('zone'); z.classList.add('shot'); setTimeout(function() { z.classList.remove('shot'); }, 150); }
+  let audio = null;
+  function beep() {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = 1200; g.gain.value = 0.08; o.connect(g); g.connect(audio.destination);
+      o.start(); o.stop(audio.currentTime + 0.06);
+    } catch (e) { /* 音が出なくても撮る */ }
+  }
+
+  // ---------- 開始・停止 ----------
+  $('btnRun').onclick = function() {
+    S.running = !S.running;
+    if (S.running) {
+      S.bg = null; S.lastShotSig = null; S.armed = true; S.stillSince = 0;
+      S.hist = []; S.pass = null; S.learnUntil = Date.now() + 1000;
+      this.textContent = '■ 停止'; this.classList.add('stop');
+      setState(cfg.mode === 'flow' ? '枠の中のふだんの様子を覚えています…' : '空の台を覚えています…（範囲の中を空にしてください）', 'warn');
+      beep();   // iPadでは、ボタンを押したときに一度鳴らしておかないと音が出ない
+      if (navigator.wakeLock) navigator.wakeLock.request('screen').then(function(w) { S.wake = w; }, function() {});
+    } else {
+      this.textContent = runLabel(); this.classList.remove('stop');
+      setState('停止中');
+      if (S.wake) { S.wake.release(); S.wake = null; }
+    }
+  };
+  $('btnShot').onclick = function() { shoot(); };
+
+  // ---------- 写真に保存 ----------
+  $('btnSave').onclick = function() {
+    const files = S.shots.slice(); if (!files.length) return;
+    const done = function() {
+      S.shots = S.shots.slice(files.length); updateCount(); $('thumbs').innerHTML = '';
+      setState(files.length + ' 枚を保存しました。AIkokuin の「📂 選ぶ」で読んでください', 'ok');
+    };
+    if (navigator.canShare && navigator.canShare({ files: files })) {
+      // iPad: 共有シートの「◯枚の画像を保存」で写真アプリへ
+      navigator.share({ files: files, title: 'AI刻印カメラ' }).then(done, function(e) {
+        if (e && e.name === 'AbortError') setState('保存をやめました（写真はまだ残っています）', 'warn');
+        else setState('保存できませんでした: ' + (e && e.message || e), 'ng');
+      });
+      return;
+    }
+    // 共有できない環境: 1枚ずつダウンロード
+    files.forEach(function(f, i) {
+      setTimeout(function() {
+        const a = document.createElement('a'); a.href = URL.createObjectURL(f); a.download = f.name;
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function() { URL.revokeObjectURL(a.href); }, 5000);
+      }, i * 200);
+    });
+    done();
+  };
+  $('btnOpen').onclick = function() { window.open(AIKOKUIN_URL, '_blank'); };
+  window.addEventListener('beforeunload', function(e) { if (S.shots.length) { e.preventDefault(); e.returnValue = ''; } });
+
+  // ---------- 設定 ----------
+  function runLabel() { return cfg.mode === 'flow' ? '▶ 開始（枠に刻印がないときに押す）' : '▶ 開始（台を空にして押す）'; }
+  function showCfg() {
+    Array.prototype.forEach.call(document.querySelectorAll('input[name=mode]'), function(r) { r.checked = r.value === cfg.mode; });
+    $('stillBox').classList.toggle('hidden', cfg.mode !== 'stop');
+    $('zone').querySelector('.lbl').textContent = cfg.mode === 'flow' ? '刻印の枠' : '検知範囲';
+    if (!S.running) $('btnRun').textContent = runLabel();
+    $('sBurst').value = cfg.burst; $('vBurst').textContent = cfg.burst + ' 枚';
+    $('sStill').value = cfg.stillMs; $('vStill').textContent = (cfg.stillMs / 1000).toFixed(1) + ' 秒';
+    $('sSens').value = cfg.sens; $('vSens').textContent = cfg.sens + '（大きいほど小さな変化にも反応）';
+  }
+  $('sBurst').oninput = function() { cfg.burst = Number(this.value); store.set('burst', cfg.burst); showCfg(); };
+  $('sStill').oninput = function() { cfg.stillMs = Number(this.value); store.set('stillMs', cfg.stillMs); showCfg(); };
+  $('sSens').oninput = function() { cfg.sens = Number(this.value); store.set('sens', cfg.sens); showCfg(); };
+  Array.prototype.forEach.call(document.querySelectorAll('input[name=mode]'), function(r) {
+    r.onchange = function() {
+      cfg.mode = this.value; store.set('mode', cfg.mode);
+      S.bg = null; S.hist = []; S.pass = null; S.learnUntil = Date.now() + 1000; showCfg();
+    };
+  });
+  $('btnSet').onclick = function() { $('settings').classList.toggle('hidden'); };
+  $('btnSetClose').onclick = function() { $('settings').classList.add('hidden'); };
+  showCfg(); layoutZone(); updateCount();
+  startCamera();
+})();
+</script>
+</body>
+</html>

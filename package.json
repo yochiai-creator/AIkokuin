@@ -4,7 +4,7 @@
   "private": true,
   "description": "AI刻印 質量入力（lpg-weight-app のコピー＋刻印の読み取り）のテスト",
   "scripts": {
-    "test": "node tools/e2e_test.js",
+    "test": "node tools/e2e_test.js && node tools/camera_test.js",
     "check": "node tools/syntax_check.js"
   },
   "devDependencies": {
