@@ -338,18 +338,30 @@
       { r: 600, span: 0.62, fs: 46, text: sym + ' 00001  W ' + w + '  12-26' }
     ] };
   }
+  // 言葉ごとの段: 言葉1つを1つの短い段として描く（文字の幅は高さの0.75倍として角度の幅を決める）
+  function segLines(rows) {
+    const out = [];
+    rows.forEach(function(row) {
+      row.segs.forEach(function(sg) {
+        const half = sg[2] * row.fs * 0.75 / row.r / 2;
+        out.push({ r: row.r, fs: row.fs, a0: sg[1] - half, a1: sg[1] + half, text: sg[0] });
+      });
+    });
+    return out;
+  }
   const KINDS = {
     '5kg': stdKind('HRH', '11.8', '6.8'),
     '8kg': stdKind('HXU', '19', '9.6'),
     '10kg': stdKind('HCY', '23.5', '11.2'),
-    // 20kg（図番31SM7247）: 3段とも同じ中心の弧。配置図の文字の位置から中心と半径を出した（点のずれは数px以内）。
-    //   外の段「記号 番号 年月 TP3.0M」（両端が急に上がる）、真ん中「LPガス … W値」、内「※ ◇ V 47」。
-    //   記号は現行の HXP（配置図の見本は過去の世代の HXC）。a0〜a1: 真下からの角度（右が正）
-    '20kg': { lines: [
-      { r: 438, a0: -0.65, a1: 0.35, fs: 56, text: '※       ◇    V 47' },
-      { r: 514, a0: -0.63, a1: 0.62, fs: 64, text: 'LPガス              W 16.9' },
-      { r: 600, a0: -0.89, a1: 1.01, fs: 64, text: 'HXP    00001    12-17   TP3.0M' }
-    ] },
+    // 20kg（図番31SM7247）: 3段とも同じ中心の弧。外の段「記号 番号 年月 TP3.0M」（両端が急に上がる）、
+    //   真ん中「LPガス W値」、内「※ ◇ V 47」。記号は現行の HXP（配置図の見本は過去の世代の HXC）。
+    //   言葉ごとの角度（真下を0、右を正）は、現場の写真（20kg HXP 68462、2026-06-12）の文字の位置から求めた
+    //   （配置図より外の段が両側へ大きく広がり、W値が中央寄り）。seg: 言葉の中心の角度と、文字の数
+    '20kg': { lines: segLines([
+      { r: 438, fs: 56, segs: [['※', -0.56, 1], ['◇', -0.25, 1], ['V', 0.05, 1], ['47', 0.21, 2]] },
+      { r: 514, fs: 64, segs: [['LPガス', -0.59, 4], ['W', -0.15, 1], ['16.6', 0.21, 3.4]] },
+      { r: 600, fs: 64, segs: [['HXP', -1.01, 3], ['00001', -0.35, 5], ['6-26', 0.5, 4], ['TP3.0M', 0.98, 5.4]] }
+    ]) },
     '20kg三部制': stdKind('HHL', '47', '17.5'),
     '30kg': stdKind('HAM', '70.5', '23.9'),
     '40kg': stdKind('HDF', '85.5', '28.4'),
@@ -523,12 +535,13 @@
     return { e: e, W: W, H: H, ax: ax, ay: ay, k: W / aw, zw: zw, zh: zh, cx: cx, cy: cy, mean: mean };
   }
   // 型をずらしたとき（dx, dy: 映像の画素、s: 大きさの倍率、rot: 傾き）の合い具合
-  function fitScore(m, pts, dx, dy, s, rot) {
+  // asp: 縦の伸び縮み（斜めから見下ろすと刻印の弧は上下につぶれて写る）
+  function fitScore(m, pts, dx, dy, s, rot, asp) {
     const cs = Math.cos(rot), sn = Math.sin(rot);
     const avg = function(list) {
       let t = 0, n = 0;
       for (let i = 0; i < list.length; i++) {
-        const ux = list[i][0] * m.zw * s, uy = list[i][1] * m.zh * s;
+        const ux = list[i][0] * m.zw * s, uy = list[i][1] * m.zh * s * asp;
         const px = m.cx + dx + ux * cs - uy * sn, py = m.cy + dy + ux * sn + uy * cs;
         const x = Math.round((px - m.ax) * m.k), y = Math.round((py - m.ay) * m.k);
         // 地図の外にはみ出した点は「平均的な所」として数える（小さくして文字の濃い所だけに当てる、を防ぐ）
@@ -543,22 +556,24 @@
   function fitTemplate(src, vw, vh, ox, oy, withX) {
     const z = cfg.zone, pts = fitPoints(), r0 = z.rot || 0;
     const maps = FIT_WS.map(function(fw) { return energyMap(src, vw, vh, z, ox, oy, fw); });
-    const score = function(dx, dy, s, rot) { let t = 0; maps.forEach(function(m) { t += fitScore(m, pts, dx, dy, s, rot); }); return t / maps.length; };
+    const score = function(dx, dy, s, rot, asp) { let t = 0; maps.forEach(function(m) { t += fitScore(m, pts, dx, dy, s, rot, asp); }); return t / maps.length; };
     const m = maps[0];
-    const cur = score(0, 0, 1, r0);
-    let best = { dx: 0, dy: 0, s: 1, rot: r0, score: cur };
-    const tryP = function(dx, dy, s, rot) { const sc = score(dx, dy, s, rot); if (sc > best.score) best = { dx: dx, dy: dy, s: s, rot: rot, score: sc }; };
+    const cur = score(0, 0, 1, r0, 1);
+    let best = { dx: 0, dy: 0, s: 1, rot: r0, asp: 1, score: cur };
+    const tryP = function(dx, dy, s, rot, asp) { const sc = score(dx, dy, s, rot, asp); if (sc > best.score) best = { dx: dx, dy: dy, s: s, rot: rot, asp: asp, score: sc }; };
     const deg = Math.PI / 180;
     // 粗く（左右は枠の幅の±15%、上下は高さの±25%、傾き±10°、大きさ0.85〜1.15倍）
+    // 縦の伸び縮み（asp）も探してみたが、現場の写真（50kg・20kg）では間違った所に合うことが増えたので探さない（2026-11-21）。
+    // 斜めから撮って刻印が上下につぶれて写るときは、枠の高さを手で合わせる
     for (let rd = -10; rd <= 10; rd += 2.5) for (let si = 0; si < 4; si++) for (let iy = -5; iy <= 5; iy++) for (let ix = -5; ix <= 5; ix++) {
       if (!withX && ix) continue;
-      tryP(ix * m.zw * 0.03, iy * m.zh * 0.05, 0.85 + si * 0.1, r0 + rd * deg);
+      tryP(ix * m.zw * 0.03, iy * m.zh * 0.05, 0.85 + si * 0.1, r0 + rd * deg, 1);
     }
     // 細かく
     const b = best;
     for (let rd = -1.5; rd <= 1.5; rd += 0.5) for (let ds = -0.04; ds <= 0.041; ds += 0.02) for (let iy = -2; iy <= 2; iy++) for (let ix = -2; ix <= 2; ix++) {
       if (!withX && ix) continue;
-      tryP(b.dx + ix * m.zw * 0.012, b.dy + iy * m.zh * 0.02, b.s + ds, b.rot + rd * deg);
+      tryP(b.dx + ix * m.zw * 0.012, b.dy + iy * m.zh * 0.02, b.s + ds, b.rot + rd * deg, 1);
     }
     best.cur = cur;
     return best;
@@ -566,7 +581,8 @@
   // 合わせた結果を枠に反映（f: どれだけ近づけるか 0〜1）
   function applyFit(b, vw, vh, f) {
     const z = cfg.zone, cx = z.x + z.w / 2 + b.dx / vw * f, cy = z.y + z.h / 2 + b.dy / vh * f, s = 1 + (b.s - 1) * f;
-    z.w = clamp(z.w * s, 0.05, 1); z.h = clamp(z.h * s, 0.03, 1);
+    const asp = 1 + ((b.asp || 1) - 1) * f;
+    z.w = clamp(z.w * s, 0.05, 1); z.h = clamp(z.h * s * asp, 0.03, 1);
     z.x = clamp(cx - z.w / 2, 0, 1 - z.w); z.y = clamp(cy - z.h / 2, 0, 1 - z.h);
     z.rot = (z.rot || 0) + (b.rot - (z.rot || 0)) * f;
     store.set('zone', z); layoutZone(); showCfg();
@@ -607,7 +623,8 @@
       dx: 0,
       dy: clamp(b.dy * 0.5, -zh * 0.1, zh * 0.1) / 0.5,
       s: 1 + clamp((b.s - 1) * 0.5, -0.05, 0.05) / 0.5,
-      rot: r0 + clamp((b.rot - r0) * 0.5, -2 * DEG, 2 * DEG) / 0.5
+      rot: r0 + clamp((b.rot - r0) * 0.5, -2 * DEG, 2 * DEG) / 0.5,
+      asp: 1 + clamp(((b.asp || 1) - 1) * 0.5, -0.05, 0.05) / 0.5
     };
     applyFit(step, cand.vw, cand.vh, 0.5);
     S.fits = (S.fits || 0) + 1;

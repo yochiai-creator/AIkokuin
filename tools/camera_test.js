@@ -135,9 +135,10 @@ function check(name, ok, detail) {
   await fp.click('#btnSet'); await fp.selectOption('#sKind', '20kg'); await fp.waitForTimeout(200);
   const t20 = await fp.$$eval('#tmpl textPath', els => els.map(e => e.textContent));
   const zr = await fp.evaluate(() => { const el = document.getElementById('zone'); return parseFloat(el.style.width) / parseFloat(el.style.height); });
-  check('流れる: 20kg を選ぶと配置図（31SM7247）の3段の型（※ ◇ V 47／LPガス … W 16.9／HXP 00001 12-17 TP3.0M）になり、枠が型の縦横（約2.9:1）に合う',
-    t20.length === 3 && t20[0].startsWith('※') && t20[0].includes('V 47') && t20[1].startsWith('LPガス') && t20[1].includes('W 16.9') &&
-    t20[2].startsWith('HXP') && t20[2].includes('12-17') && t20[2].includes('TP3.0M') && Math.abs(zr - 1019 / 351) < 0.15 && (await fp.textContent('#zone .lbl')) === '刻印の型: 20kg', JSON.stringify(t20) + ' ' + zr);
+  // 20kg: 配置図の3段の並び（言葉ごとの位置は現場の写真 HXP 68462 から）
+  const want20 = ['※', '◇', 'V', '47', 'LPガス', 'W', '16.6', 'HXP', '00001', '6-26', 'TP3.0M'];
+  check('流れる: 20kg を選ぶと3段の型（内「※ ◇ V 47」・真ん中「LPガス W 16.6」・外「HXP 00001 6-26 TP3.0M」）になり、枠が型の縦横（約2.6:1）に合う',
+    JSON.stringify(t20) === JSON.stringify(want20) && Math.abs(zr - 1148 / 434) < 0.15 && (await fp.textContent('#zone .lbl')) === '刻印の型: 20kg', JSON.stringify(t20) + ' ' + zr);
   await fp.selectOption('#sKind', '50kg'); await fp.click('#btnSetClose');
   check('流れる: 本数と枚数を出す', (await fp.textContent('#count')) === '3 本・6 枚', await fp.textContent('#count'));
   await fp.close();
