@@ -134,12 +134,70 @@ function check(name, ok, detail) {
   // 容器の種類を20kg（特殊配置）に変えると型が変わり、枠が型の縦横に合う
   await fp.click('#btnSet'); await fp.selectOption('#sKind', '20kg'); await fp.waitForTimeout(200);
   const t20 = await fp.$$eval('#tmpl textPath', els => els.map(e => e.textContent));
-  const zr = await fp.evaluate(() => { const r = document.getElementById('zone').getBoundingClientRect(); return r.width / r.height; });
+  const zr = await fp.evaluate(() => { const el = document.getElementById('zone'); return parseFloat(el.style.width) / parseFloat(el.style.height); });
   check('流れる: 20kg を選ぶと扇形の型（HXC LPガス ◇ V 47／W 16.9／00001 12-17 TP3.0M）になり、枠が型の縦横（約3.1:1）に合う',
     t20.length === 3 && t20[0].startsWith('HXC') && t20[2].includes('12-17') && Math.abs(zr - 740 / 240) < 0.2 && (await fp.textContent('#zone .lbl')) === '刻印の型: 20kg', JSON.stringify(t20) + ' ' + zr);
   await fp.selectOption('#sKind', '50kg'); await fp.click('#btnSetClose');
   check('流れる: 本数と枚数を出す', (await fp.textContent('#count')) === '3 本・6 枚', await fp.textContent('#count'));
   await fp.close();
+
+  // ---- 自動補正: 型と同じ並び（50kg）の刻印を、型から 右に30px・下に40px・1.12倍・8°傾けて描く → 「🎯 自動で合わせる」で寄る
+  const ap = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+  ap.on('pageerror', e => check('ページでJSエラーなし(自動補正)', false, e.message));
+  await ap.addInitScript(() => {
+    const cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720;
+    window.__truth = { dx: 30, dy: 40, s: 1.12, rot: 8 * Math.PI / 180 };
+    window.__stamp = true;
+    const VB = { x: 130, y: 70, w: 740, h: 240 }, CX = 500, CY = -314;
+    const lines = [{ r: 530, span: 0.56, fs: 44, text: 'LPガス V 117.5 TP3.0M' }, { r: 600, span: 0.62, fs: 46, text: 'HEP 36815 W 34.9 6-26' }];
+    // 既定の枠 (0.25,0.34,0.5,0.29) の映像上の大きさ
+    const zx = 0.25 * 1280, zy = 0.34 * 720, zw = 0.5 * 1280, zh = 0.29 * 720;
+    const paint = () => {
+      const g = cv.getContext('2d'), T = window.__truth;
+      g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#c8c8c8'; g.fillRect(0, 0, 1280, 720);
+      if (!window.__stamp) return;
+      const ccx = zx + zw / 2 + T.dx, ccy = zy + zh / 2 + T.dy, cs = Math.cos(T.rot), sn = Math.sin(T.rot);
+      g.fillStyle = '#333';
+      lines.forEach(L => {
+        const n = L.text.length;
+        for (let i = 0; i < n; i++) {
+          const a = -L.span + 2 * L.span * (i + 0.5) / n;
+          const px = CX + (L.r - L.fs * 0.1) * Math.sin(a), py = CY + (L.r - L.fs * 0.1) * Math.cos(a);
+          const ux = ((px - VB.x) / VB.w - 0.5) * zw * T.s, uy = ((py - VB.y) / VB.h - 0.5) * zh * T.s;
+          g.setTransform(1, 0, 0, 1, ccx + ux * cs - uy * sn, ccy + ux * sn + uy * cs);
+          g.rotate(-a + T.rot);
+          g.font = 'bold ' + Math.round(L.fs * zw / VB.w * T.s) + 'px monospace'; g.textAlign = 'center';
+          g.fillText(L.text[i], 0, 0);
+        }
+      });
+    };
+    paint(); setInterval(paint, 50);
+    Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: () => Promise.resolve(cv.captureStream(20)) } });
+  });
+  await ap.goto('file://' + path.join(__dirname, '..', 'docs', 'camera', 'index.html'));
+  await ap.waitForTimeout(1000);
+  check('自動補正: 撮るたびの自動補正は既定でオフ（ボタンで合わせる）', !(await ap.evaluate(() => document.getElementById('cAutoFit').checked)));
+  const zoneNow = () => ap.evaluate(() => JSON.parse(localStorage.getItem('aikc.zone') || 'null'));
+  await ap.click('#btnFit'); await ap.waitForTimeout(500);
+  const z1 = await zoneNow();
+  const cx1 = z1 && (z1.x + z1.w / 2) * 1280 - 640, cy1 = z1 && (z1.y + z1.h / 2) * 720 - (0.34 + 0.145) * 720;
+  check('自動補正: 「🎯 自動で合わせる」で型が実物の刻印に寄る（傾き 8°・右に30px・下に40px・1.12倍）',
+    z1 && Math.abs(z1.rot * 180 / Math.PI - 8) <= 2.5 && Math.abs(cx1 - 30) <= 25 && Math.abs(cy1 - 40) <= 25 && Math.abs(z1.w / 0.5 - 1.12) <= 0.1,
+    JSON.stringify({ rot: z1 && (z1.rot * 180 / Math.PI).toFixed(1), dx: cx1 && cx1.toFixed(0), dy: cy1 && cy1.toFixed(0), s: z1 && (z1.w / 0.5).toFixed(2), msg: await ap.textContent('#state') }));
+  check('自動補正: 枠が傾いて表示される', (await ap.evaluate(() => document.getElementById('zone').style.transform)).startsWith('rotate('));
+  // 刻印がないときに押しても動かさない
+  await ap.evaluate(() => { window.__stamp = false; }); await ap.waitForTimeout(300);
+  await ap.click('#btnFit'); await ap.waitForTimeout(300);
+  const z2 = await zoneNow();
+  check('自動補正: 刻印が写っていなければ動かさない', JSON.stringify(z2) === JSON.stringify(z1) && (await ap.textContent('#state')).includes('見つかりません'), await ap.textContent('#state'));
+  // 元に戻す・型の傾きスライダー
+  await ap.click('#btnUndoFit'); await ap.waitForTimeout(200);
+  const z3 = await zoneNow();
+  check('自動補正: 「↩ 元に戻す」で合わせる前に戻る', z3 && !z3.rot && Math.abs(z3.w - 0.5) < 1e-6, JSON.stringify(z3));
+  await ap.click('#btnSet'); await ap.fill('#sRot', '6'); await ap.dispatchEvent('#sRot', 'input'); await ap.click('#btnSetClose');
+  const z4 = await zoneNow();
+  check('自動補正: 「型の傾き」で手で傾けられる', z4 && Math.abs(z4.rot * 180 / Math.PI - 6) < 0.01 && /^rotate\(6(\.0+)?deg\)$/.test(await ap.evaluate(() => document.getElementById('zone').style.transform)), JSON.stringify(z4));
+  await ap.close();
 
   await browser.close();
   const failed = results.filter(r => !r).length;

@@ -72,6 +72,8 @@
   <div class="row">
     <span id="count">0 枚</span>
     <div id="thumbs"></div>
+    <button class="btn sub" id="btnFit">🎯 自動で合わせる</button>
+    <button class="btn sub hidden" id="btnUndoFit">↩ 元に戻す</button>
     <button class="btn sub" id="btnShot">手動で撮る</button>
     <button class="btn sub" id="btnOpen">AIkokuinへ</button>
   </div>
@@ -104,6 +106,9 @@
   <div class="row" style="color:#1b2240;font-size:13px;margin-top:4px">
     <button class="btn sub" id="btnCropReset" style="color:#1f2a5c;border-color:#1f2a5c">点線を刻印の枠に合わせ直す</button>
   </div>
+  <label>型の傾き <span class="v" id="vRot"></span></label>
+  <input type="range" id="sRot" min="-25" max="25" step="0.5">
+  <label style="font-weight:400"><input type="checkbox" id="cAutoFit"> 自動補正（撮るたびに、型の上下・大きさ・傾きを少しずつ実物の刻印に合わせる。反射の多い所では型がずれていくことがあるので、様子を見ながら）</label>
   <div id="zoomBox" class="hidden">
     <label>ズーム <span class="v" id="vZoom"></span></label>
     <input type="range" id="sZoom">
@@ -115,6 +120,7 @@
     iPadを固定して使います（枠をドラッグで移動、右下の丸で大きさ）。<br>
     <b>流れる</b>: 「容器の種類」を選ぶと、黄色い枠の中にその容器の<b>刻印の型</b>（神鋼機器工業の刻印配置図の並び）が出ます。映像の刻印に型が重なるように、枠を動かして大きさを合わせてください。型の文字が通る帯の中だけを見て、刻印が通ったら撮ります。<br>
     白い点線は<b>保存する範囲</b>です。刻印・総重量シール・キャップが入るように合わせると、刻印が大きく写って読み取りが正確で安くなります（黄色い枠を動かすと点線もついてきます。点線を自分で動かすと、それ以後は別々に動きます）。<br>
+    <b>🎯 自動で合わせる</b>: 型を<b>だいたい</b>刻印に重ねてから、刻印が写っているときに押すと、型の位置・大きさ・傾きを細かく合わせます。打刻は淡いので、反射の縁や1段ずれた所に合ってしまうことがあります。合わなければ「↩ 元に戻す」で戻し、枠のドラッグと「型の傾き」で手で合わせてください。<br>
     光った反射が刻印にかかったコマは選ばないようにしています。反射が多いときは、iPadの角度や照明を変えてください。<br>
     刻印が枠を通るあいだで一番くっきりしたコマ（ぶれが少なく枠の中央にある瞬間）を、通り過ぎたときに撮ります。「開始」を押したら最初の1秒は刻印のない状態を覚えるので、枠に刻印がないときに押してください。<br>
     <b>止まる</b>: 容器が止まる台の上を枠で囲み、台を空にして「開始」。容器が入って止まると撮り、どくまで同じ容器は撮りません。<br>
@@ -153,6 +159,7 @@
     sens: store.get('sens', 5),
     zone: store.get('zone', { x: 0.25, y: 0.34, w: 0.5, h: 0.29 }),  // 映像に対する割合（刻印の型の縦横 740:240 に合わせた大きさ）
     kind: store.get('kind', '50kg'),    // 刻印の型（KINDS）
+    autoFit: store.get('autoFit', false),  // 自動補正（撮るたびに型を実物に合わせる）。現場の写真で反射や1段ずれに寄ることがあったので既定はオフ
     mode: store.get('mode', 'flow'),    // flow: 流れる（刻印が枠を通ったら） / stop: 止まる（止まったら）
     cropMode: store.get('cropMode', 'around'),   // around: 刻印のまわりだけ保存 / full: 画面全体
     crop: store.get('crop', null),               // 保存する範囲（null なら刻印の枠から自動）
@@ -163,7 +170,15 @@
     const x = Math.max(0, z.x - z.w * 0.35), y = Math.max(0, z.y - z.h * 1.2);
     return { x: x, y: y, w: Math.min(1, z.x + z.w * 1.35) - x, h: Math.min(1, z.y + z.h * 1.4) - y };
   }
-  function cropRect() { return cfg.cropMode === 'full' ? { x: 0, y: 0, w: 1, h: 1 } : (cfg.crop || autoCrop(cfg.zone)); }
+  function cropRect() { return cfg.cropMode === 'full' ? { x: 0, y: 0, w: 1, h: 1 } : (cfg.crop || autoCrop(rotBox(cfg.zone))); }
+  // 傾いた枠を囲む長方形（映像に対する割合。縦横の比は映像の画素で考える）
+  function rotBox(z) {
+    if (!z.rot) return z;
+    const v = $('video'), vw = v.videoWidth || 16, vh = v.videoHeight || 9;
+    const w = z.w * vw, h = z.h * vh, c = Math.abs(Math.cos(z.rot)), sn = Math.abs(Math.sin(z.rot));
+    const bw = (w * c + h * sn) / vw, bh = (w * sn + h * c) / vh, cx = z.x + z.w / 2, cy = z.y + z.h / 2;
+    return { x: Math.max(0, cx - bw / 2), y: Math.max(0, cy - bh / 2), w: Math.min(1, bw), h: Math.min(1, bh) };
+  }
   function moveTh() { return 11 - cfg.sens; }          // 感度5 → 差6 で「動いた」
 
   // ---------- 状態 ----------
@@ -225,6 +240,7 @@
   }
   function layoutZone() {
     place($('zone'), cfg.zone);
+    $('zone').style.transform = cfg.zone.rot ? 'rotate(' + (cfg.zone.rot * 180 / Math.PI).toFixed(2) + 'deg)' : '';
     $('crop').classList.toggle('hidden', cfg.cropMode === 'full');
     place($('crop'), cropRect());
   }
@@ -387,6 +403,189 @@
     return m;
   }
 
+  // 枠（傾きも）の中身を W×H に写す。src は映像、または映像の一部を写したキャンバス（ox, oy: その左上の映像上の位置）
+  function drawZone(g, src, vw, vh, z, W, H, ox, oy) {
+    const zw = z.w * vw, zh = z.h * vh, cx = (z.x + z.w / 2) * vw - (ox || 0), cy = (z.y + z.h / 2) * vh - (oy || 0);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.fillStyle = '#808080'; g.fillRect(0, 0, W, H);
+    g.translate(W / 2, H / 2); g.scale(W / zw, H / zh); g.rotate(-(z.rot || 0)); g.translate(-cx, -cy);
+    g.drawImage(src, 0, 0);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  // ---------- 自動補正: 型を実物の刻印に合わせる ----------
+  // 型の文字の帯の中の模様の量 − 帯の外（文字のない所）の模様の量 が一番大きくなる
+  // 上下左右の位置・大きさ・傾きを、粗く探してから細かく探す。
+  //  - 「🎯 自動で合わせる」: いまの映像で、左右も含めて合わせる（刻印が写っているときに押す）
+  //  - 自動補正: 刻印が通って撮るたびに、そのコマで上下・大きさ・傾きだけを合わせる（左右は流れで決まるので動かさない）。
+  //    今の型より15%以上よく合うときだけ、半分ずつ近づける（何本か流れるうちに寄っていく）
+  const FIT_WS = [240, 480];   // 粗い地図と細かい地図（打刻の線がつぶれない細かさ）の両方で測って平均する
+  const fitCanvas = document.createElement('canvas');
+  let fitPts = null, fitKey = '';
+  function fitPoints() {
+    if (fitKey === cfg.kind) return fitPts;
+    const k = kindDef(), band = [], gap = [], gapNear = [];
+    const toUV = function(px, py) { return [(px - VB.x) / VB.w - 0.5, (py - VB.y) / VB.h - 0.5]; };
+    k.lines.forEach(function(L) {
+      const c = L.shift || 0;
+      for (let i = 0; i <= 40; i++) {
+        const a = c - L.span + 2 * L.span * i / 40;
+        [0.2, 0.5, 0.8].forEach(function(f) { const q = arcPt(L.r - L.fs * f, a); band.push(toUV(q.x, q.y)); });
+        // 段のすぐ下・すぐ上（ずれるとここに文字が入る）
+        [-0.55, 1.45].forEach(function(f) { const q = arcPt(L.r - L.fs * f, a); gapNear.push(toUV(q.x, q.y)); });
+      }
+      // 段の左右の外
+      [-1, 1].forEach(function(side) {
+        for (let j = 1; j <= 6; j++) {
+          const a = c + side * (L.span + 0.03 * j);
+          [0.3, 0.7].forEach(function(f) { const q = arcPt(L.r - L.fs * f, a); gapNear.push(toUV(q.x, q.y)); });
+        }
+      });
+    });
+    // 文字のない所: 枠の中の格子のうち、どの段の帯にも入らない点
+    for (let gy = 0; gy < 10; gy++) for (let gx = 0; gx < 24; gx++) {
+      const px = VB.x + (gx + 0.5) / 24 * VB.w, py = VB.y + (gy + 0.5) / 10 * VB.h;
+      const dx = px - ARC_CX, dy = py - ARC_CY, r = Math.sqrt(dx * dx + dy * dy), a = Math.atan2(dx, dy);
+      const inBand = k.lines.some(function(L) { const c = L.shift || 0; return r <= L.r + L.fs * 0.6 && r >= L.r - L.fs * 1.4 && Math.abs(a - c) <= L.span + 0.06; });
+      if (!inBand) gap.push(toUV(px, py));
+    }
+    // 段のすぐ上下は、段の帯どうしが重なる所を除く
+    const inAnyBand = function(uv) {
+      const px = (uv[0] + 0.5) * VB.w + VB.x, py = (uv[1] + 0.5) * VB.h + VB.y;
+      const dx = px - ARC_CX, dy = py - ARC_CY, r = Math.sqrt(dx * dx + dy * dy), a = Math.atan2(dx, dy);
+      return k.lines.some(function(L) { const c = L.shift || 0; return r <= L.r + L.fs * 0.3 && r >= L.r - L.fs * 1.1 && Math.abs(a - c) <= L.span + 0.02; });
+    };
+    gapNear.forEach(function(uv) { if (!inAnyBand(uv)) gap.push(uv); });
+    fitPts = { band: band, gap: gap }; fitKey = cfg.kind;
+    return fitPts;
+  }
+  // 枠のまわり（1.8倍）の模様の量の地図を作る
+  function energyMap(src, vw, vh, z, ox, oy, FW) {
+    const zw = z.w * vw, zh = z.h * vh, cx = (z.x + z.w / 2) * vw, cy = (z.y + z.h / 2) * vh;
+    // src が写している映像の範囲（映像そのものなら全体、撮ったコマなら保存する範囲）
+    const sx0 = ox || 0, sy0 = oy || 0, sx1 = sx0 + (src.videoWidth || src.width), sy1 = sy0 + (src.videoHeight || src.height);
+    const aw = Math.max(zw, zh) * 1.8, ah = Math.max(zh * 2.4, zw * 0.9);
+    const ax = cx - aw / 2, ay = cy - ah / 2;
+    const W = FW, H = Math.max(16, Math.round(FW * ah / aw));
+    fitCanvas.width = W; fitCanvas.height = H;
+    const g = fitCanvas.getContext('2d', { willReadFrequently: true });
+    g.setTransform(1, 0, 0, 1, 0, 0); g.fillStyle = '#808080'; g.fillRect(0, 0, W, H);
+    g.drawImage(src, ax - (ox || 0), ay - (oy || 0), aw, ah, 0, 0, W, H);
+    const d = g.getImageData(0, 0, W, H).data, a = new Float32Array(W * H), e = new Float32Array(W * H);
+    for (let i = 0; i < a.length; i++) a[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
+    // 打刻は塗装と同じ色のくぼみ（淡い影）。真っ黒（シールの印刷・黒い縁）や真っ白（光った反射）の近くは数えない
+    for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      let lo = 255, hi = 0;
+      for (let yy = -1; yy <= 1; yy++) for (let xx = -1; xx <= 1; xx++) { const q = a[i + yy * W + xx]; if (q < lo) lo = q; if (q > hi) hi = q; }
+      // 写っていない所（撮ったコマの範囲の外）も数えない
+      const vx = ax + x / (W / aw), vy = ay + y / (W / aw);
+      if (vx < sx0 || vy < sy0 || vx >= sx1 || vy >= sy1) { e[i] = -1; continue; }
+      if (lo < 70 || hi > 212) { e[i] = -1; continue; }
+      const s9 = a[i - W - 1] + a[i - W] + a[i - W + 1] + a[i - 1] + a[i] + a[i + 1] + a[i + W - 1] + a[i + W] + a[i + W + 1];
+      e[i] = Math.abs(9 * a[i] - s9) / 9;
+    }
+    // 強すぎる模様（印刷の縁など）は頭打ちに: ふつうの値（中央値）の4倍まで
+    const vals = []; for (let i = 0; i < e.length; i += 3) if (e[i] >= 0) vals.push(e[i]);
+    vals.sort(function(p, q) { return p - q; });
+    const med = vals.length ? vals[Math.floor(vals.length / 2)] : 0, cap = Math.max(med * 4, 1);
+    let mean = 0, nm = 0;
+    for (let i = 0; i < e.length; i++) { if (e[i] < 0) continue; if (e[i] > cap) e[i] = cap; mean += e[i]; nm++; }
+    mean = nm ? mean / nm : 0;
+    for (let i = 0; i < e.length; i++) if (e[i] < 0) e[i] = mean;   // 数えない所は「平均的な所」に
+    return { e: e, W: W, H: H, ax: ax, ay: ay, k: W / aw, zw: zw, zh: zh, cx: cx, cy: cy, mean: mean };
+  }
+  // 型をずらしたとき（dx, dy: 映像の画素、s: 大きさの倍率、rot: 傾き）の合い具合
+  function fitScore(m, pts, dx, dy, s, rot) {
+    const cs = Math.cos(rot), sn = Math.sin(rot);
+    const avg = function(list) {
+      let t = 0, n = 0;
+      for (let i = 0; i < list.length; i++) {
+        const ux = list[i][0] * m.zw * s, uy = list[i][1] * m.zh * s;
+        const px = m.cx + dx + ux * cs - uy * sn, py = m.cy + dy + ux * sn + uy * cs;
+        const x = Math.round((px - m.ax) * m.k), y = Math.round((py - m.ay) * m.k);
+        // 地図の外にはみ出した点は「平均的な所」として数える（小さくして文字の濃い所だけに当てる、を防ぐ）
+        t += (x < 1 || y < 1 || x >= m.W - 1 || y >= m.H - 1) ? m.mean : m.e[y * m.W + x]; n++;
+      }
+      return n ? t / n : 0;
+    };
+    // 今の位置から遠い候補ほど不利に（自動補正は、おおまかに合わせた型を細かく詰めるためのもの）
+    const fx = dx / (m.zw * 0.15), fy = dy / (m.zh * 0.25);
+    return (avg(pts.band) - avg(pts.gap)) / (m.mean || 1) * Math.max(0.6, 1 - 0.12 * (fx * fx + fy * fy));
+  }
+  function fitTemplate(src, vw, vh, ox, oy, withX) {
+    const z = cfg.zone, pts = fitPoints(), r0 = z.rot || 0;
+    const maps = FIT_WS.map(function(fw) { return energyMap(src, vw, vh, z, ox, oy, fw); });
+    const score = function(dx, dy, s, rot) { let t = 0; maps.forEach(function(m) { t += fitScore(m, pts, dx, dy, s, rot); }); return t / maps.length; };
+    const m = maps[0];
+    const cur = score(0, 0, 1, r0);
+    let best = { dx: 0, dy: 0, s: 1, rot: r0, score: cur };
+    const tryP = function(dx, dy, s, rot) { const sc = score(dx, dy, s, rot); if (sc > best.score) best = { dx: dx, dy: dy, s: s, rot: rot, score: sc }; };
+    const deg = Math.PI / 180;
+    // 粗く（左右は枠の幅の±15%、上下は高さの±25%、傾き±10°、大きさ0.85〜1.15倍）
+    for (let rd = -10; rd <= 10; rd += 2.5) for (let si = 0; si < 4; si++) for (let iy = -5; iy <= 5; iy++) for (let ix = -5; ix <= 5; ix++) {
+      if (!withX && ix) continue;
+      tryP(ix * m.zw * 0.03, iy * m.zh * 0.05, 0.85 + si * 0.1, r0 + rd * deg);
+    }
+    // 細かく
+    const b = best;
+    for (let rd = -1.5; rd <= 1.5; rd += 0.5) for (let ds = -0.04; ds <= 0.041; ds += 0.02) for (let iy = -2; iy <= 2; iy++) for (let ix = -2; ix <= 2; ix++) {
+      if (!withX && ix) continue;
+      tryP(b.dx + ix * m.zw * 0.012, b.dy + iy * m.zh * 0.02, b.s + ds, b.rot + rd * deg);
+    }
+    best.cur = cur;
+    return best;
+  }
+  // 合わせた結果を枠に反映（f: どれだけ近づけるか 0〜1）
+  function applyFit(b, vw, vh, f) {
+    const z = cfg.zone, cx = z.x + z.w / 2 + b.dx / vw * f, cy = z.y + z.h / 2 + b.dy / vh * f, s = 1 + (b.s - 1) * f;
+    z.w = clamp(z.w * s, 0.05, 1); z.h = clamp(z.h * s, 0.03, 1);
+    z.x = clamp(cx - z.w / 2, 0, 1 - z.w); z.y = clamp(cy - z.h / 2, 0, 1 - z.h);
+    z.rot = (z.rot || 0) + (b.rot - (z.rot || 0)) * f;
+    store.set('zone', z); layoutZone(); showCfg();
+    bandKey = '';   // 測る帯を作り直す
+  }
+  function fitText(b) {
+    return '傾き ' + ((cfg.zone.rot || 0) * 180 / Math.PI).toFixed(1) + '°・大きさ ' + b.s.toFixed(2) + '倍';
+  }
+  $('btnFit').onclick = function() {
+    const v = $('video'); if (!v.videoWidth) return;
+    if (cfg.mode !== 'flow') { setState('自動で合わせるのは「流れる」のときだけです', 'warn'); return; }
+    const b = fitTemplate(v, v.videoWidth, v.videoHeight, 0, 0, true);
+    if (b.score <= 0 || b.score < b.cur * 1.05) { setState('刻印が見つかりません。型をだいたい刻印に重ねてから押してください', 'warn'); return; }
+    S.undoZone = Object.assign({}, cfg.zone);
+    $('btnUndoFit').classList.remove('hidden');
+    applyFit(b, v.videoWidth, v.videoHeight, 1);
+    // 合わせた位置からもう一度探す（途中の「それらしい所」で止まらないように）
+    const b2 = fitTemplate(v, v.videoWidth, v.videoHeight, 0, 0, true);
+    if (b2.score > b2.cur * 1.02) applyFit(b2, v.videoWidth, v.videoHeight, 1);
+    S.hist = []; S.pass = null; S.learnUntil = Date.now() + 1000;
+    setState('型を刻印に合わせました（' + fitText(b) + '）', 'ok');
+  };
+  $('btnUndoFit').onclick = function() {
+    if (!S.undoZone) return;
+    cfg.zone = S.undoZone; S.undoZone = null; store.set('zone', cfg.zone); layoutZone(); bandKey = '';
+    this.classList.add('hidden'); setState('元に戻しました', 'ok');
+  };
+  // 撮るたびの自動補正（撮ったコマのうち一番良いもので）
+  // 撮った瞬間の刻印は左右に少しずれているので、探すときは左右も含めて探し（ずれを傾きや大きさで埋め合わせない）、
+  // 反映するのは上下・大きさ・傾きだけ。1回で動かす量に上限を付け、今より3割以上よく合うときだけ動かす（行きすぎを防ぐ）
+  const DEG = Math.PI / 180;
+  function autoFitFrom(cand) {
+    if (!cfg.autoFit || !cand || !cand.vw) return;
+    const b = fitTemplate(cand.c, cand.vw, cand.vh, cand.ox, cand.oy, true);
+    if (!(b.score > 0 && b.score > b.cur * 1.3)) return;
+    const z = cfg.zone, r0 = z.rot || 0, zh = z.h * cand.vh;
+    const step = {
+      dx: 0,
+      dy: clamp(b.dy * 0.5, -zh * 0.1, zh * 0.1) / 0.5,
+      s: 1 + clamp((b.s - 1) * 0.5, -0.05, 0.05) / 0.5,
+      rot: r0 + clamp((b.rot - r0) * 0.5, -2 * DEG, 2 * DEG) / 0.5
+    };
+    applyFit(step, cand.vw, cand.vh, 0.5);
+    S.fits = (S.fits || 0) + 1;
+  }
+
   const TW = 192;
   const texCanvas = document.createElement('canvas');
   function zoneTexture() {
@@ -395,7 +594,7 @@
     const W = TW, H = Math.max(8, Math.min(96, Math.round(TW * zh / zw)));
     if (texCanvas.width !== W || texCanvas.height !== H) { texCanvas.width = W; texCanvas.height = H; }
     const g = texCanvas.getContext('2d', { willReadFrequently: true });
-    g.drawImage(v, z.x * v.videoWidth, z.y * v.videoHeight, zw, zh, 0, 0, W, H);
+    drawZone(g, v, v.videoWidth, v.videoHeight, z, W, H);
     const d = g.getImageData(0, 0, W, H).data, a = new Float32Array(W * H);
     for (let i = 0; i < a.length; i++) a[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
     let t = 0, n = 0, tx = 0, glare = 0;
@@ -461,11 +660,13 @@
     else if (p.cands.length < cfg.burst) { slot = { c: document.createElement('canvas') }; p.cands.push(slot); }
     else { const low = p.cands.reduce(function(a, b) { return a.e <= b.e ? a : b; }); if (e <= low.e) return; slot = low; }
     slot.e = e; slot.t = now; slot.at = new Date(now);
-    drawOut(v, slot.c);
+    const r = drawOut(v, slot.c);
+    slot.ox = r.sx; slot.oy = r.sy; slot.vw = v.videoWidth; slot.vh = v.videoHeight;
   }
   function saveCands(cands) {
     S.passes++;
     flash(); beep();
+    try { autoFitFrom(cands.reduce(function(a, b) { return a.e >= b.e ? a : b; })); } catch (e) { /* 合わせられなくても撮る */ }
     cands.slice().sort(function(a, b) { return a.t - b.t; }).reduce(function(pr, c) {
       return pr.then(function() { return saveCanvas(c.c, c.at); });
     }, Promise.resolve()).then(function() { setState('撮影しました（' + S.passes + ' 本目・' + S.shots.length + ' 枚）', 'ok'); });
@@ -508,6 +709,7 @@
     const sw = Math.max(16, Math.round(r.w * v.videoWidth)), sh = Math.max(16, Math.round(r.h * v.videoHeight));
     c.width = sw; c.height = sh;
     c.getContext('2d').drawImage(v, sx, sy, sw, sh, 0, 0, sw, sh);
+    return { sx: sx, sy: sy };
   }
   function saveCanvas(c, at) {
     if (S.shots.length >= MAX_SHOTS) { setState('ためた写真が ' + MAX_SHOTS + ' 枚になりました。「📤 写真に保存」してください', 'ng'); return Promise.resolve(); }
@@ -625,6 +827,7 @@
     Array.prototype.forEach.call(document.querySelectorAll('input[name=mode]'), function(r) { r.checked = r.value === cfg.mode; });
     Array.prototype.forEach.call(document.querySelectorAll('input[name=cropMode]'), function(r) { r.checked = r.value === cfg.cropMode; });
     if (cfg.zoom !== null) $('vZoom').textContent = Number(cfg.zoom).toFixed(1) + ' 倍';
+    if ($('sRot')) { const d = (cfg.zone.rot || 0) * 180 / Math.PI; $('sRot').value = d.toFixed(1); $('vRot').textContent = d.toFixed(1) + '°'; }
     layoutZone();
     $('stillBox').classList.toggle('hidden', cfg.mode !== 'stop');
     $('zone').querySelector('.lbl').textContent = cfg.mode === 'flow' ? '刻印の型: ' + cfg.kind : '検知範囲';
@@ -660,6 +863,13 @@
     z.h = h; z.y = clamp(cy - h / 2, 0, 1 - h);
     store.set('zone', z); layoutZone();
   }
+  $('sRot').oninput = function() {
+    cfg.zone.rot = Number(this.value) * Math.PI / 180; store.set('zone', cfg.zone); layoutZone(); showRot();
+    S.hist = []; S.pass = null; S.learnUntil = Date.now() + 1000;
+  };
+  function showRot() { const d = (cfg.zone.rot || 0) * 180 / Math.PI; $('sRot').value = d.toFixed(1); $('vRot').textContent = d.toFixed(1) + '°'; }
+  $('cAutoFit').checked = !!cfg.autoFit;
+  $('cAutoFit').onchange = function() { cfg.autoFit = this.checked; store.set('autoFit', cfg.autoFit); };
   $('btnCropReset').onclick = function() { cfg.crop = null; store.set('crop', null); showCfg(); };
   $('sZoom').oninput = function() { cfg.zoom = Number(this.value); store.set('zoom', cfg.zoom); applyTrack(); showCfg(); };
   $('cTorch').onchange = function() { cfg.torch = this.checked; store.set('torch', cfg.torch); applyTrack(); };
