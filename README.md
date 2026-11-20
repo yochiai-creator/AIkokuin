@@ -39,7 +39,7 @@ Apps Script のウェブアプリは Google の枠（iframe）の中で動くた
 基本は元アプリの引き継ぎ書「コピーの手順」と同じです（新しいスプレッドシート＋新しいGASプロジェクト＋新しいデプロイ）。このリポジトリでは、本番のIDはすでに外してあります。
 
 1. 新しいスプレッドシートを作る（`setup/LPG容器_質量入力.xlsx` をドライブに上げて「Googleスプレッドシートとして保存」）。
-2. 「拡張機能 > Apps Script」を開き、スクリプトIDを `.clasp.json` の `scriptId` に入れる。
+2. 「拡張機能 > Apps Script」を開き、スクリプトIDを `.clasp.json` の `scriptId` に入れる（済み: `1zMP914N…`）。
 3. テストを通す。
 
    ```bash
@@ -65,7 +65,7 @@ Apps Script のウェブアプリは Google の枠（iframe）の中で動くた
 
 | 場所 | 本番 | このコピー |
 |---|---|---|
-| `.clasp.json` scriptId | 本番のスクリプトID | 仮の文字列（入れ替えるまで `clasp push` は失敗する） |
+| `.clasp.json` scriptId | 本番のスクリプトID | このコピーのスクリプトID `1zMP914N…`（2026-11-20 設定） |
 | `Code.js` MAIN_SCRIPT_ID / MAIN_WEBAPP_URL | 本番の値 | 空（旧URL案内を出さない） |
 | `Code.js` DEFAULT_SPREADSHEET_ID | 本番のスプレッドシート | 空（初期セットアップの `SPREADSHEET_ID` かバインド先を使う） |
 | ドライブのフォルダ・ファイル名 | LPG容器 質量入力 / LPG容器 採番表_ / LPG容器 入力記録_ / LPG容器 神鋼機器用 質量データ | AI刻印 〜 にそろえた（本番のフォルダを名前で見つけて使わないため） |
