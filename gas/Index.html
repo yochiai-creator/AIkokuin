@@ -284,27 +284,11 @@
   @keyframes spBelt { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
   @keyframes spRoll { to { transform: rotate(360deg); } }
 
-  /* 刻印の読み取り（カメラ） */
-  .cambtn { width: 100%; border: 2px solid var(--navy); background: #fff; color: var(--navy); border-radius: 10px;
-    padding: 10px; font-size: 17px; font-weight: 700; margin-bottom: 8px; }
-  .cambtn.on { background: var(--navy); color: #fff; }
-  #camBox { border: 2px solid var(--navy); border-radius: 12px; padding: 8px; margin-bottom: 8px; background: #fff; }
-  .cam-view { position: relative; background: #000; border-radius: 8px; overflow: hidden; }
-  .cam-view video { display: block; width: 100%; max-height: 34vh; object-fit: contain; }
-  .cam-guide { position: absolute; left: 5%; right: 5%; top: 10%; bottom: 10%; border: 3px dashed rgba(255,255,255,.85);
-    border-radius: 8px; pointer-events: none; }
-  .cam-view.busy .cam-guide { border-color: #ffd34d; }
-  .cam-status { margin-top: 6px; font-size: 15px; font-weight: 700; padding: 6px 8px; border-radius: 8px; background: var(--pend); }
-  .cam-status.ok { background: var(--okbg); color: var(--ok); }
-  .cam-status.warn { background: var(--warnbg); color: var(--warn); }
-  .cam-status.err { background: var(--ngbg); color: var(--ng); }
-  .cam-read { font-size: 13px; color: var(--muted); margin-top: 4px; line-height: 1.6; }
-  .cam-read b { color: var(--text); font-size: 15px; }
-  .cam-btns { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px; }
-  .cam-btns button { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 8px 12px; font-size: 15px; }
-  .cam-btns button.use { background: var(--ok); color: #fff; border-color: var(--ok); font-weight: 700; }
-  .cam-btns label { font-size: 14px; display: flex; gap: 4px; align-items: center; }
-  .cam-btns button.vid { background: var(--navy); color: #fff; border-color: var(--navy); font-weight: 700; }
+  /* 刻印の読み取り（動画・写真） */
+  .cam-row { display: flex; gap: 6px; margin-bottom: 8px; }
+  .cambtn { flex: 1; border: 2px solid var(--navy); background: var(--navy); color: #fff; border-radius: 10px;
+    padding: 10px; font-size: 17px; font-weight: 700; }
+  .cambtn.sub { flex: 0 0 auto; background: #fff; color: var(--navy); font-size: 14px; font-weight: 400; }
   /* 動画から読む: 一覧（画面いっぱい） */
   #vidPanel { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 16px 40px; }
   #vidPanel h2 { margin: 4px 0 8px; font-size: 20px; color: var(--navy); }
@@ -337,7 +321,7 @@
 <div class="sp-sub">読み込み中…</div></div>
 <script>window.SPLASH_T0 = Date.now();</script>
 <header>
-  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v4（動画で刻印をまとめて読む・キャップのグループNo照合）</span></h1>
+  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v5（速読＋精読で安く正確に）</span></h1>
   <span class="user" id="workerBadge"></span>
   <span class="user" id="user"></span>
   <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
@@ -360,7 +344,7 @@
   <div class="cards scroll" id="activeLots"></div>
   <div class="row" style="margin-top:14px">
     <button class="btn big" id="btnStart" disabled>入力を始める</button>
-    <button class="btn big sec" id="btnStartCam" disabled>📷 刻印を読んで入力</button>
+    <button class="btn big sec" id="btnStartCam" disabled>🎬 撮って読む（動画・写真）</button>
   </div>
   <div class="sub" id="camHomeMsg" style="margin-top:6px;font-size:13px;color:var(--muted)"></div>
 
@@ -440,25 +424,12 @@
 <main id="entry" class="hidden">
   <div class="input-layout">
     <div class="panel" id="inPanel">
-      <button class="cambtn" id="btnCam" tabindex="-1">📷 刻印を読む（カメラ）</button>
-      <div id="camBox" class="hidden">
-        <div class="cam-view" id="camView"><video id="camVideo" playsinline muted autoplay></video><div class="cam-guide"></div></div>
-        <div class="cam-status" id="camStatus"></div>
-        <div class="cam-read" id="camRead"></div>
-        <div class="cam-btns">
-          <button class="use hidden" id="btnCamUse" tabindex="-1"></button>
-          <button id="btnCamNow" tabindex="-1">今すぐ読む</button>
-          <label><input type="checkbox" id="camAuto" style="width:auto" tabindex="-1">止めたら自動で読む</label>
-          <button id="btnCamClose" tabindex="-1">閉じる</button>
-        </div>
-        <div class="cam-btns">
-          <button class="vid" id="btnVidShoot" tabindex="-1">🎬 動画を撮って読む</button>
-          <button id="btnVidPick" tabindex="-1">🎞 撮った動画を選ぶ</button>
-        </div>
-        <input type="file" id="camFile" accept="image/*" capture="environment" class="hidden">
-        <input type="file" id="vidShoot" accept="video/*" capture="environment" class="hidden">
-        <input type="file" id="vidFile" accept="video/*" class="hidden">
+      <div class="cam-row" id="camRow">
+        <button class="cambtn" id="btnVidShoot" tabindex="-1">🎬 撮って読む</button>
+        <button class="cambtn sub" id="btnVidPick" tabindex="-1">📂 選ぶ</button>
       </div>
+      <input type="file" id="vidShoot" accept="video/*,image/*" capture="environment" class="hidden">
+      <input type="file" id="vidFile" accept="video/*,image/*" class="hidden">
       <div class="field" id="fldNum">
         <div class="lbl"><span>容器番号</span><span id="numHint">下3桁でOK（先頭の0は不要）</span></div>
         <div class="val" id="valNum"></div>
@@ -539,7 +510,6 @@
 <div id="vidPanel" class="hidden">
   <h2>🎬 動画から刻印を読む</h2>
   <div class="vid-head">
-    <button class="main hidden" id="btnVidRead">読み始める</button>
     <button class="main hidden" id="btnVidSave">チェックした分を保存</button>
     <button id="btnVidAll" class="hidden">保存できるものを全部チェック</button>
     <button id="btnVidStop" class="hidden">止める</button>
@@ -1031,7 +1001,7 @@
     $('btnStart').textContent = S.workers.length && !worker() ? '入力者を選ぶと入力できます' : '入力を始める';
     // 刻印の読み取りも入力画面で行うので、入力を始められるときだけ押せる
     $('btnStartCam').disabled = $('btnStart').disabled;
-    $('camHomeMsg').textContent = !S.lots.length ? '📷 刻印の読み取りは、ロットを登録して入力を始めると使えます（入力画面の「📷 刻印を読む」）' : '';
+    $('camHomeMsg').textContent = !S.lots.length ? '🎬 刻印の読み取りは、ロットを登録して入力者を選ぶと使えます' : '';
   }
 
   // 開始〜終了を 001〜100 区切りの100本単位に分けた各ロットの開始番号
@@ -1075,9 +1045,9 @@
   };
 
   // 入力は1台だけ: 入力開始でこのiPadを入力中にする（別のiPadが入力中なら入れない）
-  function startEntry(b, withCam) {
+  function startEntry(b, then) {
     b.disabled = true;
-    const go = function() { showEntry(); if (withCam && !K.on) camOpen(); };
+    const go = function() { showEntry(); if (then) then(); };
     call('claimInput', { devId: DEV_ID, worker: worker(), device: $('fDevice').value.trim() }).then(function(m) {
       b.disabled = false; S.claims = m || {}; go();
     }).catch(function(e) {
@@ -1087,9 +1057,9 @@
       go();
     });
   }
-  $('btnStart').onclick = function() { startEntry(this, false); };
-  // ホームから: 入力画面を開いてすぐカメラを起動する
-  $('btnStartCam').onclick = function() { startEntry(this, true); };
+  $('btnStart').onclick = function() { startEntry(this); };
+  // ホームから: 撮って（選んで）から入力画面を開いて読む（撮影はボタンを押した直後に開く必要がある）
+  $('btnStartCam').onclick = function() { $('vidShoot').value = ''; $('vidShoot').click(); };
   (function() {
     const d = new Date(), p2 = function(n) { return ('0' + n).slice(-2); };
     $('saibanDate').value = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
@@ -1331,7 +1301,7 @@
   function resetEntry(msg, kind) {
     S.stage = 'num'; S.ng = false; S.bufNum = ''; S.bufActual = ''; S.bufMass = '';
     S.target = null; S.confirmDup = false; S.confirmMassText = null; S.ngFrom = ''; S.fullMass = false;
-    S.overwrite = ''; S.seal = false; S.dateOk = false; S.missNext = false; S.kokuinFill = false;
+    S.overwrite = ''; S.seal = false; S.dateOk = false; S.missNext = false;
     setNotice(msg || '容器番号を入力', kind || 'info');
     render();
   }
@@ -1468,8 +1438,6 @@
         if (k === 'Enter') { S.dateOk = true; setNotice('製造年月OK。質量を入力', 'info'); render(); return; }
         if (/^\d$/.test(k) || k === '.' || k === '+') { dateOkFirst(); return; }
       }
-      // 刻印から先に入れたWは、数字を打ったら打ち直しとして消す
-      if (S.kokuinFill && (/^\d$/.test(k) || k === '.' || k === 'Backspace')) { S.bufMass = ''; S.kokuinFill = false; if (k === 'Backspace') { render(); return; } }
       if (/^\d$/.test(k) || k === '.') {
         if (S.bufMass === MISSING || S.bufMass === REPAIR) S.bufMass = '';
         const win = shortWindow(S.target.lot);
@@ -2220,122 +2188,53 @@
     }
   }
 
-  // ---------- 刻印の読み取り（カメラ） ----------
-  // カメラの映像を見て、容器が止まったら1コマをサーバー（readKokuin → Claude API）に送り、刻印を読む。
-  // 容器番号が入力中のロットに1つだけ当てはまり、確からしさが「高」か、「中」で2回続けて同じ番号なら、その番号で入力する。
-  // 「低」（W検算が合わない等）や容器種別がロットと違うときは自動では入れず、ボタンで確かめてから入れる。
-  // 刻印のW（容器自重）は質量の欄に先に入れておく（Enterで保存・違えば打ち直す）。
-  // 読み取った刻印（記号・番号・V・W・シール・TP・製造年月・種別）は saveKokuin で「刻印記録」シートに残す。
+  // ---------- 刻印の読み取り（動画・写真） ----------
+  // iPadで撮った動画（または写真）を、画面の中でコマに分けて容器ごとに読み、一覧で確かめてまとめて保存する。
+  // ※ Apps Script の画面は Google の枠の中で動くため、iPad ではカメラ映像を直接使えない（NotAllowedError）。だから「撮ってから読む」。
+  //  1) コマ選び: 0.25秒ごとにコマを見て、場面（容器）が替わるところで区切り、各場面で一番くっきりしたコマを選ぶ
+  //  2) 速読: 選んだコマを1枚ずつ安いモデルで読む（readKokuin tier=fast）
+  //  3) まとめ: 時刻順に並べ、同じ番号が続いたコマを1本の容器にまとめる
+  //  4) 確定: 2コマ以上で番号・Wが一致し、W検算OK、キャップのグループNoも一致（キャップが見えなければ3コマ以上一致）なら速読だけで確定
+  //  5) 精読: 確定できない容器だけ、その容器の一番くっきりした3コマをまとめて高精度のモデルで読み直す（tier=precise）
+  //  6) 一覧で写真（タップで拡大）と読みを確かめ、チェックした分を刻印のWで保存（「刻印記録」に video / photo で残す）
   // 読み取りのきまりは共有ドライブ「刻印読み取り_運用一式」の共通ルールに合わせている（gas/Kokuin.js）。
-  const CAM = {
-    TICK_MS: 600,       // 映像を見る間隔
-    STEADY: 6,          // 前のコマとの差がこれ未満なら「止まっている」
-    MOVED: 14,          // 読み取った容器からの差がこれ以上なら「次の容器に替わった」
-    MAX_SIDE: 1568,     // 送る画像の長い辺（px。Claude はこれより大きい画像を縮めて読むので、これ以上は送らない）
-    FAIL_LIMIT: 2       // 同じ場面で読めなかったら、場面が変わるまで送らない回数
+  const VID = {
+    STEP: 0.25,        // コマを見る間隔（秒）
+    MOVED: 14,         // 場面が替わったとみなす差（48×36の白黒で、1画素あたりの平均の差）
+    MAX_FRAMES: 200,   // 1本の動画で速読するコマの上限
+    PARALLEL: 3,       // 同時に読む数
+    PRECISE_FRAMES: 3, // 精読で1本に使うコマ数
+    MAX_SIDE: 1568,    // 送る画像の長い辺（Claude はこれより大きい画像を縮めて読む）
+    YEN_PER_USD: 150   // 費用の表示用
   };
-  const K = { on: false, stream: null, timer: null, busy: false, photo: false,
-    prevSig: null, doneSig: null, failSig: null, failCount: 0, cand: null, pauseUntil: 0 };
-  $('camAuto').checked = store.get('lpg.camAuto') !== '0';
-  $('camAuto').onchange = function() { store.set('lpg.camAuto', this.checked ? '1' : '0'); };
+  const V = { video: null, img: null, url: '', how: 'video', picks: [], reads: [], items: [], running: false, stop: false, cost: 0, nFast: 0, nPrecise: 0 };
 
-  function camStatus(text, kind) { const el = $('camStatus'); el.textContent = text; el.className = 'cam-status' + (kind ? ' ' + kind : ''); }
-
-  function camOpen() {
-    K.on = true; K.photo = false; K.prevSig = null; K.cand = null; K.failSig = null; K.failCount = 0;
-    $('camBox').classList.remove('hidden'); $('btnCam').classList.add('on'); $('btnCam').textContent = '📷 刻印読み取り中（タップで閉じる）';
-    $('camView').classList.remove('hidden'); $('btnCamNow').textContent = '今すぐ読む'; $('btnCamUse').classList.add('hidden');
-    $('camRead').textContent = '';
-    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return camPhotoMode('この画面ではカメラ映像が使えません。写真を撮って読みます');
-    camStatus('カメラを起動しています…');
-    navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false })
-      .then(function(st) {
-        if (!K.on) { st.getTracks().forEach(function(t) { t.stop(); }); return; }
-        K.stream = st;
-        const v = $('camVideo'); v.srcObject = st;
-        const p = v.play(); if (p && p.catch) p.catch(function() { /* 自動再生できなくても映像は出る */ });
-        clearInterval(K.timer); K.timer = setInterval(camTick, CAM.TICK_MS);
-        camStatus('刻印を枠に入れて、容器を止めてください');
-      })
-      .catch(function(e) { camPhotoMode('この画面ではカメラ映像を直接使えません（' + (e && e.name || 'エラー') + '）。1本ずつなら「写真を撮って読む」、まとめてなら「🎬 動画を撮って読む」'); });
+  // 切り出して、長い辺を VID.MAX_SIDE 以下にしてJPEGにする。
+  // 横長の動画（1920×1080 など）は真ん中（左右10%・下15%を除く。キャップ・シール・刻印は残る）を縮めずに送る
+  function grabJpeg(src, w, h) {
+    const box = w > h * 1.3 ? [0.10, 0.02, 0.80, 0.83] : [0, 0, 1, 1];
+    const sx = w * box[0], sy = h * box[1], sw = w * box[2], sh = h * box[3];
+    const k = Math.min(1, VID.MAX_SIDE / Math.max(sw, sh));
+    const c = document.createElement('canvas'); c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+    c.getContext('2d').drawImage(src, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.85).split(',')[1];
   }
-
-  // カメラ映像が使えないとき（iPadの設定・ブラウザの制限）は、写真を1枚撮って読む
-  function camPhotoMode(msg) {
-    K.photo = true; $('camView').classList.add('hidden'); $('btnCamNow').textContent = '📷 写真を撮って読む';
-    camStatus(msg, 'warn');
-  }
-
-  function camClose() {
-    K.on = false; clearInterval(K.timer); K.timer = null;
-    if (K.stream) { K.stream.getTracks().forEach(function(t) { t.stop(); }); K.stream = null; }
-    $('camVideo').srcObject = null;
-    $('camBox').classList.add('hidden'); $('btnCam').classList.remove('on'); $('btnCam').textContent = '📷 刻印を読む（カメラ）';
-  }
-
-  // 映像の小さな白黒の写し（48×36）。コマどうしの差で「止まった」「次の容器に替わった」を見分ける
-  const sigCanvas = document.createElement('canvas'); sigCanvas.width = 48; sigCanvas.height = 36;
-  function frameSig(v) {
-    const g = sigCanvas.getContext('2d', { willReadFrequently: true });
-    g.drawImage(v, 0, 0, 48, 36);
-    const d = g.getImageData(0, 0, 48, 36).data, out = new Array(48 * 36);
-    for (let i = 0; i < out.length; i++) out[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
-    return out;
+  function thumbOf(src, w, h) {
+    const c = document.createElement('canvas'); c.width = 200; c.height = Math.round(h * 200 / w);
+    c.getContext('2d').drawImage(src, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', 0.7);
   }
   function sigDiff(a, b) {
     if (!a || !b) return 999;
     let t = 0; for (let i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]);
     return t / a.length;
   }
-
-  // 切り出して、長い辺を CAM.MAX_SIDE 以下にしてJPEGにする。
-  // crop: true = ライブ映像の枠の中（左右5%・上下10%を除く）／ 'video' = 動画（左右10%・下15%を除く。キャップ・シール・刻印は残す）
-  function grabJpeg(src, w, h, crop) {
-    const box = crop === 'video' ? [0.10, 0.02, 0.80, 0.83] : crop ? [0.05, 0.10, 0.90, 0.80] : [0, 0, 1, 1];
-    const sx = w * box[0], sy = h * box[1], sw = w * box[2], sh = h * box[3];
-    const k = Math.min(1, CAM.MAX_SIDE / Math.max(sw, sh));
-    const c = document.createElement('canvas'); c.width = Math.round(sw * k); c.height = Math.round(sh * k);
-    c.getContext('2d').drawImage(src, sx, sy, sw, sh, 0, 0, c.width, c.height);
-    return c.toDataURL('image/jpeg', 0.85).split(',')[1];
-  }
-
-  function camTick() {
-    if (!K.on) return;
-    if ($('entry').classList.contains('hidden')) { camClose(); return; }
-    const v = $('camVideo');
-    if (K.busy || !v.videoWidth || S.stage !== 'num' || Date.now() < K.pauseUntil) return;
-    const sig = frameSig(v);
-    const steady = sigDiff(sig, K.prevSig) < CAM.STEADY;
-    K.prevSig = sig;
-    // 容器が替わったら、前の容器の候補（ボタン）は消す（別の容器に前の番号を入れないため）
-    if (K.cand && K.cand.sig && sigDiff(sig, K.cand.sig) >= CAM.MOVED) { K.cand = null; $('btnCamUse').classList.add('hidden'); }
-    if (!$('camAuto').checked) return;
-    if (K.doneSig && sigDiff(sig, K.doneSig) < CAM.MOVED) return;            // 読み取った容器がまだ写っている
-    K.doneSig = null;
-    if (!steady) { if (!K.cand) camStatus('刻印を枠に入れて、容器を止めてください'); return; }
-    if (K.failSig && sigDiff(sig, K.failSig) < CAM.STEADY && K.failCount >= CAM.FAIL_LIMIT) return;   // 同じ場面で読めなかった
-    camRead(grabJpeg(v, v.videoWidth, v.videoHeight, true), sig, 'auto');
-  }
-
   function camHints() { return S.lots.map(function(l) { return { prefix: l.prefix, start: l.start, end: l.end, kind: l.kind }; }); }
-
-  function camRead(image, sig, how) {
-    K.busy = true; $('camView').classList.add('busy'); camStatus('読み取り中…');
-    call('readKokuin', { image: image, hints: camHints() }).then(function(r) {
-      K.busy = false; $('camView').classList.remove('busy');
-      onKokuin(r, sig, how);
-    }, function(e) {
-      K.busy = false; $('camView').classList.remove('busy');
-      K.pauseUntil = Date.now() + 5000;     // エラーのあとは少し待つ（送りすぎない）
-      camStatus('読み取りエラー: ' + (e && e.message || e), 'err');
-    });
-  }
 
   function kokuinText(r) {
     const parts = [];
     if (r.kind && r.kind !== '不明') parts.push(r.kind);
     if (r.volume_l) parts.push('V' + r.volume_l);
-    if (r.tare_kg) parts.push('W' + r.tare_kg + (r.w_from_seal ? '（シールから）' : ''));
     if (r.seal_kg) parts.push('シール' + r.seal_kg + (r.w_check === 'OK' ? ' 検算OK' : r.w_check === 'NG' ? ' 検算NG' : ''));
     if (r.test_pressure_mpa) parts.push('TP' + r.test_pressure_mpa);
     if (r.manufactured) parts.push('製造 ' + (r.ym || r.manufactured));
@@ -2347,15 +2246,7 @@
     if (!kind || kind === '不明' || !lot.kind) return true;
     return String(lot.kind).replace(/把手$/, '') === kind;
   }
-
-  function showKokuin(r) {
-    const conf = { high: '高', medium: '中', low: '低' }[r.confidence] || '－';
-    $('camRead').innerHTML = (r.number ? '<b>' + esc((r.symbol ? r.symbol + ' ' : '') + r.number) + '</b>　' : '') +
-      esc(kokuinText(r)) + (r.other ? '　' + esc(r.other) : '') + '　確からしさ: ' + conf +
-      (r.note ? '<br>' + esc(r.note) : '');
-  }
-
-  // 読み取った番号を入力中のロットに当てはめる → { hit } か { err }
+  // 読み取った番号を入力中のロットに当てはめる → { hit } / { hit, warn } / { err }
   function matchKokuin(r) {
     const all = resolve(r.number);
     const hits = all.filter(function(h) { return !r.symbol || !h.lot.prefix || h.lot.prefix === r.symbol; });
@@ -2369,123 +2260,27 @@
     return { err: '「' + name + '」はどのロットの範囲にもありません' };
   }
 
-  function onKokuin(r, sig, how) {
-    showKokuin(r);
-    $('btnCamUse').classList.add('hidden');
-    if (S.stage !== 'num') { camStatus('質量の入力中です。保存してから次の容器を読みます', 'warn'); return; }
-    if (!r.readable) {
-      K.failCount = K.failSig && sigDiff(sig, K.failSig) < CAM.STEADY ? K.failCount + 1 : 1; K.failSig = sig;
-      K.cand = null;
-      camStatus('読めませんでした' + (r.note ? '（' + r.note + '）' : '') + '。角度や光を変えるか、テンキーで入力してください', 'warn');
-      return;
-    }
-    K.failSig = null; K.failCount = 0;
-    const m = matchKokuin(r);
-    if (m.err) { K.cand = null; K.doneSig = sig; beep(false); camStatus(m.err + '。番号を確かめてテンキーで入力してください', 'err'); return; }
-    const key = m.hit.lot.lotId + '|' + m.hit.serial;
-    const prev = K.cand;      // 同じ場面での前の読み（容器が替わると camTick で消える）
-    const again = !!prev && prev.key === key && prev.read.confidence !== 'low';
-    K.cand = { key: key, hit: m.hit, read: r, sig: sig };
-    $('btnCamUse').textContent = label(m.hit.lot, m.hit.serial) + ' で入力';
-    // ボタン待ちのあいだは同じ場面を読み直さない（容器が替わるか「今すぐ読む」まで）
-    if (m.warn) { K.doneSig = sig; $('btnCamUse').classList.remove('hidden'); beep(false); camStatus(m.warn + '。確かめて合っていれば「' + $('btnCamUse').textContent + '」', 'err'); return; }
-    if (r.confidence === 'high' || (again && r.confidence === 'medium')) return kokuinAccept(how === 'photo' ? 'photo' : again ? 'auto2' : 'auto');
-    $('btnCamUse').classList.remove('hidden');
-    if (r.confidence === 'low') {
-      K.doneSig = sig;
-      camStatus('「' + label(m.hit.lot, m.hit.serial) + '」と読みましたが確からしさが低です（' + (r.note || '要目視') + '）。刻印を目で確かめて、合っていればボタン', 'err');
-      return;
-    }
-    if (prev) {
-      // 2回読んで番号が食い違った: 自動では決めない
-      K.doneSig = sig;
-      camStatus('読むたびに番号が変わります（' + label(prev.hit.lot, prev.hit.serial) + ' / ' + label(m.hit.lot, m.hit.serial) + '）。刻印を目で確かめてください', 'err');
-      return;
-    }
-    // 確からしさが中: もう一度読んで同じなら入力する。待たずに使うときはボタン
-    camStatus('「' + label(m.hit.lot, m.hit.serial) + '」と読みました（確からしさ: 中）。もう一度読んで確かめます', 'warn');
-  }
-
-  function kokuinAccept(how) {
-    const c = K.cand; if (!c || S.stage !== 'num') return;
-    K.cand = null; K.doneSig = K.prevSig; $('btnCamUse').classList.add('hidden');
-    const lot = c.hit.lot, serial = c.hit.serial, r = c.read;
-    call('saveKokuin', { lotId: lot.lotId, serial: serial, read: r, how: how, worker: worker(), device: $('fDevice').value.trim() })
-      .catch(function() { /* 記録できなくても入力は続ける */ });
-    S.bufNum = r.number; S.ng = false; S.overwrite = ''; S.missNext = false;
-    camStatus('✓ ' + label(lot, serial) + ' を読み取りました' + (kokuinText(r) ? '（' + kokuinText(r) + '）' : ''), 'ok');
-    goMass(c.hit);
-    if (S.stage === 'mass' && S.target && S.target.serial === serial && lot.entries[serial] === undefined) {
-      const ym = r.ym || r.manufactured;
-      // 刻印のW（容器自重）を質量の欄に先に入れる。W検算が合わないときは入れない
-      if (r.tare_kg && r.w_check !== 'NG') {
-        S.bufMass = r.tare_kg; S.kokuinFill = true;
-        setNotice('刻印 W' + r.tare_kg + (r.w_check === 'OK' ? '（シール' + r.seal_kg + 'で検算OK）' : r.w_from_seal ? '（シール' + r.seal_kg + 'から）' : '') +
-          ' を入れました → Enter で保存・違えば打ち直し' + (ym ? '（製造 ' + ym + '）' : ''), 'info');
-      } else {
-        setNotice('刻印から ' + label(lot, serial) + '。質量を入力' + (ym ? '（製造 ' + ym + '）' : ''), 'info');
-      }
-      render();
-    }
-  }
-
-  $('btnCam').onclick = function() { this.blur(); if (K.on) camClose(); else camOpen(); };
-  $('btnCamClose').onclick = function() { this.blur(); camClose(); };
-  $('btnCamUse').onclick = function() { this.blur(); kokuinAccept('button'); };
-  $('btnCamNow').onclick = function() {
-    this.blur();
-    if (K.busy) return;
-    if (S.stage !== 'num') { camStatus('質量の入力中です。保存してから読んでください', 'warn'); return; }
-    if (K.photo) { $('camFile').value = ''; $('camFile').click(); return; }
-    const v = $('camVideo');
-    if (!v.videoWidth) { camStatus('カメラの映像がまだありません', 'warn'); return; }
-    K.doneSig = null; K.failSig = null; K.failCount = 0;
-    const sig = frameSig(v); K.prevSig = sig;
-    camRead(grabJpeg(v, v.videoWidth, v.videoHeight, true), sig, 'manual');
-  };
-  $('camFile').onchange = function() {
-    const f = this.files && this.files[0]; if (!f) return;
-    const url = URL.createObjectURL(f), img = new Image();
-    img.onload = function() { URL.revokeObjectURL(url); camRead(grabJpeg(img, img.naturalWidth, img.naturalHeight, false), null, 'photo'); };
-    img.onerror = function() { URL.revokeObjectURL(url); camStatus('写真を読み込めませんでした', 'err'); };
-    img.src = url;
-  };
-
-  // ---------- 動画から読む ----------
-  // iPadのカメラで撮った動画（またはカメラロールの動画）を、画面の中でコマに分けて容器ごとに読む。
-  // 1) 0.25秒ごとにコマを見て、場面（容器）が替わるところで区切り、各場面で一番くっきりしたコマを選ぶ
-  // 2) 読むコマ数と費用の目安を出して、「読み始める」で1コマずつ readKokuin へ
-  // 3) 同じ番号が続けて読めたものは1本にまとめる（2回以上一致した「中」は確からしいものとして扱う）
-  // 4) 一覧で写真と読みを確かめて、チェックした分をまとめて保存（刻印のWを質量として保存）
-  // ※ Apps Script の画面ではカメラ映像を直接使えない（Google の枠の制限）ため、この方式にしている
-  const VID = {
-    STEP: 0.25,        // コマを見る間隔（秒）
-    MOVED: 14,         // 場面が替わったとみなす差（CAM.MOVED と同じ考え方）
-    MAX_READS: 150,    // 1本の動画で読むコマの上限（費用の上限）
-    PARALLEL: 2,       // 同時に読む数
-    YEN_MIN: 1, YEN_MAX: 3   // 1回あたりの費用の目安（円）
-  };
-  const V = { video: null, url: '', frames: [], picks: [], items: [], running: false, stop: false };
-
   function vidMsg(text, kind) { const el = $('vidMsg'); el.textContent = text; el.className = 'vid-msg' + (kind ? ' ' + kind : ''); }
   function vidBar(r) { $('vidBar').style.width = Math.round(Math.max(0, Math.min(1, r)) * 100) + '%'; }
-  function vidButtons(o) {
-    ['btnVidRead', 'btnVidSave', 'btnVidAll', 'btnVidStop'].forEach(function(id) { $(id).classList.toggle('hidden', !o[id]); });
-  }
+  function vidButtons(o) { ['btnVidSave', 'btnVidAll', 'btnVidStop'].forEach(function(id) { $(id).classList.toggle('hidden', !o[id]); }); }
+  function yen(usd) { return Math.max(1, Math.round(usd * VID.YEN_PER_USD)); }
 
   function vidOpen(file) {
     if (!file) return;
     if (S.stage !== 'num') resetEntry('容器番号を入力', 'info');
     vidReset();
+    V.stop = false; V.how = /^image\//.test(file.type) ? 'photo' : 'video';
     $('vidPanel').classList.remove('hidden'); $('vidList').innerHTML = '';
-    vidButtons({}); vidBar(0);
-    vidMsg('動画を読み込んでいます…');
-    vidLoad(file).then(vidScan).catch(function(e) { vidMsg('動画を読めませんでした: ' + (e && e.message || e), 'err'); });
+    vidButtons({ btnVidStop: true }); vidBar(0);
+    vidMsg(V.how === 'photo' ? '写真を読み込んでいます…' : '動画を読み込んでいます…');
+    const start = V.how === 'photo' ? photoLoad(file) : vidLoad(file).then(vidScan);
+    start.then(function() { if (!V.stop) return vidRead(); })
+      .catch(function(e) { vidButtons({}); vidMsg('読めませんでした: ' + (e && e.message || e), 'err'); });
   }
   function vidReset() {
     V.stop = true; V.running = false;
     if (V.url) { try { URL.revokeObjectURL(V.url); } catch (e) { /* 無視 */ } }
-    V.video = null; V.url = ''; V.frames = []; V.picks = []; V.items = [];
+    V.video = null; V.img = null; V.url = ''; V.picks = []; V.reads = []; V.items = []; V.cost = 0; V.nFast = 0; V.nPrecise = 0;
   }
   function vidClose() { vidReset(); $('vidPanel').classList.add('hidden'); render(); }
 
@@ -2499,10 +2294,19 @@
   }
   function vidSeek(v, t) { const p = waitEvent(v, 'seeked', 4000); v.currentTime = t; return p; }
 
+  function photoLoad(file) {
+    return new Promise(function(resolve, reject) {
+      const img = new Image();
+      V.url = URL.createObjectURL(file);
+      img.onload = function() { V.img = img; V.picks = [{ t: 0, sharp: 0 }]; resolve(); };
+      img.onerror = function() { reject(new Error('写真を開けません')); };
+      img.src = V.url;
+    });
+  }
   function vidLoad(file) {
     const v = document.createElement('video');
     v.muted = true; v.playsInline = true; v.setAttribute('playsinline', ''); v.preload = 'auto';
-    V.url = URL.createObjectURL(file); V.video = v; V.stop = false;
+    V.url = URL.createObjectURL(file); V.video = v;
     v.src = V.url;
     return waitEvent(v, 'loadeddata', 15000).then(function() {
       if (!v.videoWidth) throw new Error('映像がありません');
@@ -2537,147 +2341,177 @@
     return { sig: sig, sharp: sum2 / n - (sum / n) * (sum / n) };
   }
 
+  // 1) コマ選び: 場面の最初のコマから差が VID.MOVED 以上になったら次の場面。各場面で一番くっきりしたコマ
   function vidScan() {
     const v = V.video, dur = v.duration;
     if (!isFinite(dur) || dur <= 0) throw new Error('動画の長さが分かりません');
     const times = [];
     for (let t = Math.min(0.1, dur / 2); t < dur; t += VID.STEP) times.push(t);
-    V.frames = [];
-    let i = 0;
+    const frames = []; let i = 0;
     const step = function() {
-      if (V.stop) return Promise.resolve();
-      if (i >= times.length) return Promise.resolve();
+      if (V.stop || i >= times.length) return Promise.resolve();
       const t = times[i++];
       return vidSeek(v, t).then(function() {
-        const st = frameStats(v); st.t = t; V.frames.push(st);
-        if (i % 8 === 0) { vidBar(i / times.length); vidMsg('コマを調べています… ' + Math.round(dur * i / times.length) + ' / ' + Math.round(dur) + ' 秒'); }
+        const st = frameStats(v); st.t = t; frames.push(st);
+        if (i % 8 === 0) { vidBar(i / times.length * 0.3); vidMsg('コマを選んでいます… ' + Math.round(dur * i / times.length) + ' / ' + Math.round(dur) + ' 秒'); }
         return step();
       });
     };
     return step().then(function() {
-      if (V.stop) return;
-      vidBar(1);
-      // 場面に分ける: 場面の最初のコマから差が VID.MOVED 以上になったら次の場面。各場面で一番くっきりしたコマ
       const picks = []; let anchor = null, best = null;
-      V.frames.forEach(function(f) {
-        if (!anchor || sigDiff(f.sig, anchor.sig) >= VID.MOVED) {
-          if (best) picks.push(best);
-          anchor = f; best = f;
-        } else if (f.sharp > best.sharp) best = f;
+      frames.forEach(function(f) {
+        if (!anchor || sigDiff(f.sig, anchor.sig) >= VID.MOVED) { if (best) picks.push(best); anchor = f; best = f; }
+        else if (f.sharp > best.sharp) best = f;
       });
       if (best) picks.push(best);
-      V.picks = picks.slice(0, VID.MAX_READS);
-      const over = picks.length > VID.MAX_READS;
-      vidMsg('動画 ' + Math.round(dur) + ' 秒から ' + V.picks.length + ' コマを選びました' + (over ? '（多すぎるので最初の ' + VID.MAX_READS + ' コマだけ）' : '') +
-        '。読み取りの費用は約 ' + V.picks.length * VID.YEN_MIN + '〜' + V.picks.length * VID.YEN_MAX + ' 円です。「読み始める」で読みます', over ? 'warn' : '');
-      vidButtons({ btnVidRead: V.picks.length > 0 });
-      if (!V.picks.length) vidMsg('読めそうなコマがありませんでした', 'err');
+      V.picks = picks.slice(0, VID.MAX_FRAMES).map(function(p) { return { t: p.t, sharp: p.sharp }; });
+      V.overflow = picks.length > VID.MAX_FRAMES;
+      if (!V.picks.length) throw new Error('読めそうなコマがありません');
     });
   }
 
+  // コマを画像にする（動画はその時刻へ移動してから）
+  function grabPick(p) {
+    if (V.img) return Promise.resolve({ image: grabJpeg(V.img, V.img.naturalWidth, V.img.naturalHeight), thumb: thumbOf(V.img, V.img.naturalWidth, V.img.naturalHeight) });
+    const v = V.video;
+    return vidSeek(v, p.t).then(function() { return { image: grabJpeg(v, v.videoWidth, v.videoHeight), thumb: thumbOf(v, v.videoWidth, v.videoHeight) }; });
+  }
+  function readCall(images, tier) {
+    return call('readKokuin', { images: images, tier: tier, hints: camHints() }).then(function(r) {
+      V.cost += r.cost_usd || 0; if (tier === 'precise') V.nPrecise++; else V.nFast++;
+      return r;
+    }, function(e) { return { error: (e && e.message) || String(e) }; });
+  }
+
+  // 2〜5) 速読 → まとめ → 確定 → 精読
   function vidRead() {
-    const v = V.video; if (!v || V.running) return;
-    V.running = true; V.stop = false; V.reads = [];
-    vidButtons({ btnVidStop: true }); vidBar(0);
-    const picks = V.picks.slice(); let next = 0, done = 0;
+    V.running = true; V.reads = [];
+    const picks = V.picks, total = picks.length; let next = 0, done = 0;
     const inflight = [];
-    const total = picks.length;
-    const grabNext = function() {
-      if (V.stop || next >= total) return Promise.resolve(false);
+    // 速読: 画像は順番に作り（動画の移動は1つずつ）、読み取りは VID.PARALLEL 本まで同時に
+    const loop = function() {
+      if (V.stop || next >= total) return Promise.all(inflight);
+      if (inflight.length >= VID.PARALLEL) return Promise.race(inflight).then(loop);
       const p = picks[next++];
-      return vidSeek(v, p.t).then(function() {
-        // 横長の動画（1920×1080 など）は真ん中を切り出して、刻印を縮めずに送る（現場の動画で刻印は中央やや下に小さく写る）
-        const image = grabJpeg(v, v.videoWidth, v.videoHeight, v.videoWidth > v.videoHeight ? 'video' : false);
-        const k = 200 / v.videoWidth, c = document.createElement('canvas');
-        c.width = 200; c.height = Math.round(v.videoHeight * k);
-        c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
-        const thumb = c.toDataURL('image/jpeg', 0.7);
-        const job = call('readKokuin', { image: image, hints: camHints() }).then(function(r) { return r; }, function(e) { return { error: (e && e.message) || String(e) }; })
-          .then(function(r) { V.reads.push({ t: p.t, thumb: thumb, r: r }); done++; vidBar(done / total); vidMsg('読み取り中… ' + done + ' / ' + total); });
-        inflight.push(job);
-        job.then(function() { inflight.splice(inflight.indexOf(job), 1); });
-        return true;
+      return grabPick(p).then(function(g) {
+        p.thumb = g.thumb;
+        const job = readCall([g.image], 'fast').then(function(r) {
+          V.reads.push({ p: p, r: r }); done++;
+          vidBar(0.3 + 0.5 * done / total); vidMsg('速読中… ' + done + ' / ' + total + ' コマ');
+        });
+        inflight.push(job); job.then(function() { inflight.splice(inflight.indexOf(job), 1); });
+        return loop();
       });
     };
-    const loop = function() {
-      if (V.stop) return Promise.all(inflight);
-      if (next >= total) return Promise.all(inflight);
-      if (inflight.length >= VID.PARALLEL) return Promise.race(inflight).then(loop);
-      return grabNext().then(loop);
-    };
-    loop().then(function() {
+    return loop().then(function() {
+      vidGroup();
+      const need = V.items.filter(function(it) { return !it.fastOk; });
+      let k = 0;
+      // 精読: 確定できない容器だけ、くっきりした順に VID.PRECISE_FRAMES コマをまとめて
+      const precise = function() {
+        if (V.stop || k >= need.length) return Promise.resolve();
+        const it = need[k++];
+        vidMsg('精読中… ' + k + ' / ' + need.length + ' 本（速読で確定できなかった容器）'); vidBar(0.8 + 0.2 * k / need.length);
+        const ps = it.picks.slice().sort(function(a, b) { return b.sharp - a.sharp; }).slice(0, VID.PRECISE_FRAMES)
+          .sort(function(a, b) { return a.t - b.t; });
+        const imgs = [];
+        return ps.reduce(function(pr, p) { return pr.then(function() { return grabPick(p).then(function(g) { imgs.push(g.image); }); }); }, Promise.resolve())
+          .then(function() { return readCall(imgs, 'precise'); })
+          .then(function(r) {
+            if (r.error) { it.error = r.error; return; }
+            it.precise = ps.length;
+            if (r.readable) { it.r = r; it.key = (r.symbol || '') + '|' + r.number; }
+            else it.r.note = '精読でも確定できませんでした' + (r.note ? '（' + r.note + '）' : '');
+            it.preciseOk = r.readable;
+          }).then(precise);
+      };
+      return precise();
+    }).then(function() {
       V.running = false;
-      vidMerge(); vidRender();
+      vidJudge(); vidRender();
     });
   }
 
   const CONF_RANK = { high: 3, medium: 2, low: 1 };
-  // 読みを容器ごとにまとめる: 時刻順に並べ、同じ番号が続けて読めたら1本に。続かずにまた出てきた番号は「重複」として目視へ
-  function vidMerge() {
-    const reads = V.reads.slice().sort(function(a, b) { return a.t - b.t; });
-    const items = []; let fails = 0, errors = 0, lastErr = '';
+  // 3) まとめ: 時刻順に並べ、同じ番号が続いたコマを1本に。読めなかったコマは前後どちらにも入れない
+  function vidGroup() {
+    const reads = V.reads.slice().sort(function(a, b) { return a.p.t - b.p.t; });
+    const items = []; V.fails = 0; V.errors = 0; V.lastErr = '';
     reads.forEach(function(x) {
-      if (x.r.error) { errors++; lastErr = x.r.error; return; }
-      if (!x.r.readable) { fails++; return; }
+      if (x.r.error) { V.errors++; V.lastErr = x.r.error; return; }
+      if (!x.r.readable) { V.fails++; return; }
       const key = (x.r.symbol || '') + '|' + x.r.number;
       const prev = items[items.length - 1];
       if (prev && prev.key === key) {
-        prev.reads++;
-        if (CONF_RANK[x.r.confidence] > CONF_RANK[prev.r.confidence] || (!prev.r.tare_kg && x.r.tare_kg)) { prev.r = x.r; prev.thumb = x.thumb; }
-        if (x.r.tare_kg && prev.ws.indexOf(x.r.tare_kg) < 0) prev.ws.push(x.r.tare_kg);
+        prev.picks.push(x.p); prev.rs.push(x.r);
+        if (CONF_RANK[x.r.confidence] > CONF_RANK[prev.r.confidence] || (!prev.r.tare_kg && x.r.tare_kg)) { prev.r = x.r; prev.thumb = x.p.thumb; }
         return;
       }
-      items.push({ key: key, r: x.r, thumb: x.thumb, t: x.t, reads: 1, ws: x.r.tare_kg ? [x.r.tare_kg] : [] });
+      items.push({ key: key, r: x.r, thumb: x.p.thumb, t: x.p.t, picks: [x.p], rs: [x.r] });
     });
-    const count = {};
-    items.forEach(function(it) { count[it.key] = (count[it.key] || 0) + 1; });
+    // 4) 確定: 速読だけで決めてよいか
     items.forEach(function(it) {
+      const ws = uniq(it.rs.map(function(r) { return r.tare_kg; }).filter(String));
+      const wOk = it.rs.some(function(r) { return r.w_check === 'OK'; }) && !it.rs.some(function(r) { return r.w_check === 'NG'; });
+      const gOk = it.rs.some(function(r) { return r.group_check === 'OK'; }) && !it.rs.some(function(r) { return r.group_check === 'NG'; });
+      const noLow = !it.rs.some(function(r) { return r.confidence === 'low'; });
+      it.fastOk = it.rs.length >= 2 && ws.length === 1 && wOk && noLow && (gOk || it.rs.length >= 3);
+      if (it.fastOk) it.r = Object.assign({}, it.r, { confidence: 'high' });
+    });
+    V.items = items;
+  }
+  function uniq(a) { return a.filter(function(x, i) { return a.indexOf(x) === i; }); }
+
+  // 一覧のチェックの初期値と、保存できるか
+  function vidJudge() {
+    const count = {};
+    V.items.forEach(function(it) { count[it.key] = (count[it.key] || 0) + 1; });
+    V.items.forEach(function(it) {
       it.dup = count[it.key] > 1;
       it.m = matchKokuin(it.r);
       it.entered = it.m.hit && it.m.hit.lot.entries[it.m.hit.serial] !== undefined;
-      // 何回読んでもWが食い違うものは確定しない
-      it.wConflict = it.ws.length > 1;
-      it.sure = it.r.confidence === 'high' || (it.r.confidence === 'medium' && it.reads >= 2);
-      it.canSave = !!it.m.hit && !it.entered && !!it.r.tare_kg && it.r.w_check !== 'NG' && !it.wConflict;
+      it.sure = it.fastOk || (it.preciseOk && it.r.confidence === 'high');
+      it.canSave = !!it.m.hit && !it.entered && !!it.r.tare_kg && it.r.w_check !== 'NG' && !it.error;
       it.checked = it.canSave && it.sure && !it.m.warn && !it.dup;
       it.saved = false;
     });
-    V.items = items; V.fails = fails; V.errors = errors; V.lastErr = lastErr;
   }
 
   function vidStatus(it) {
     if (it.saved) return ['保存済み', 'ok'];
+    if (it.error) return ['読み取りエラー: ' + it.error, 'err'];
     if (it.m.err) return [it.m.err, 'err'];
     if (it.entered) return ['入力済み（' + fmtMass(it.m.hit.lot.entries[it.m.hit.serial]) + '）。直すときはテンキーで', 'warn'];
     if (it.dup) return ['同じ番号が離れた場所でも読めました（誤読の疑い）。写真で確かめてください', 'err'];
     if (it.m.warn) return [it.m.warn, 'err'];
     if (!it.r.tare_kg) return ['Wが読めません。テンキーで入力してください', 'warn'];
     if (it.r.w_check === 'NG') return ['W検算が合いません。テンキーで入力してください', 'err'];
-    if (it.wConflict) return ['読むたびにWが違います（' + it.ws.join(' / ') + '）。テンキーで入力してください', 'err'];
-    if (!it.sure) return ['確からしさが' + ({ medium: '中', low: '低' }[it.r.confidence]) + '。写真で確かめてからチェック', 'warn'];
+    if (!it.sure) return ['確からしさが' + ({ high: '高', medium: '中', low: '低' }[it.r.confidence]) + '。写真で確かめてからチェック', 'warn'];
     return ['このまま保存できます', 'ok'];
   }
 
   function vidRender() {
-    const conf = { high: '高', medium: '中', low: '低' };
     $('vidList').innerHTML = V.items.map(function(it, i) {
       const st = vidStatus(it), r = it.r;
       const name = it.m.hit ? label(it.m.hit.lot, it.m.hit.serial) : (r.symbol ? r.symbol + ' ' : '') + r.number;
-      return '<div class="vid-row ' + (it.saved ? 'saved' : st[1] === 'ok' ? 'ok' : st[1] === 'err' ? 'ng' : '') + '" data-i="' + i + '">' +
+      const how = it.fastOk ? '速読 ' + it.rs.length + 'コマ一致' : it.precise ? '精読（' + it.precise + 'コマ）' : '速読 ' + it.rs.length + 'コマ';
+      return '<div class="vid-row ' + (it.saved ? 'saved' : st[1] === 'ok' ? 'ok' : st[1] === 'err' ? 'ng' : '') + '">' +
         '<input type="checkbox" data-i="' + i + '"' + (it.checked ? ' checked' : '') + (it.canSave && !it.saved ? '' : ' disabled') + '>' +
         '<img src="' + it.thumb + '" alt="">' +
-        '<div><div><span class="num">' + esc(name) + '</span>' + (r.tare_kg ? '<span class="w">W' + esc(r.tare_kg) + '</span>' : '') + '</div>' +
-        '<div class="meta">' + esc(kokuinText(r)) + '　確からしさ: ' + (conf[r.confidence] || '－') + (it.reads > 1 ? '（' + it.reads + 'コマで一致）' : '') +
-        '　' + it.t.toFixed(1) + '秒' + (r.note ? '<br>' + esc(r.note) : '') + '</div>' +
+        '<div><div><span class="num">' + esc(name) + '</span>' + (r.tare_kg ? '<span class="w">W' + esc(r.tare_kg) + (r.w_from_seal ? '（シールから）' : '') + '</span>' : '') + '</div>' +
+        '<div class="meta">' + esc(kokuinText(r)) + '　' + how + (V.how === 'video' ? '　' + it.t.toFixed(1) + '秒' : '') + (r.note ? '<br>' + esc(r.note) : '') + '</div>' +
         '<div class="st ' + st[1] + '">' + esc(st[0]) + '</div></div></div>';
     }).join('');
     const n = V.items.filter(function(it) { return it.checked && !it.saved; }).length;
-    const ok = V.items.length;
-    vidMsg(ok + ' 本読めました' + (V.fails ? '・読めなかったコマ ' + V.fails : '') + (V.errors ? '・エラー ' + V.errors + '（' + V.lastErr + '）' : '') +
-      '。写真と読みを確かめて、チェックした分を保存してください（写真をタップで拡大）', V.errors ? 'err' : ok ? '' : 'warn');
+    const sure = V.items.filter(function(it) { return it.sure && !it.m.warn && !it.m.err && !it.dup; }).length;
+    vidBar(1);
+    vidMsg(V.items.length + ' 本読めました（確定 ' + sure + ' 本）' + (V.fails ? '・読めなかったコマ ' + V.fails : '') +
+      (V.errors ? '・エラー ' + V.errors + '（' + V.lastErr + '）' : '') + (V.overflow ? '・コマが多いので最初の ' + VID.MAX_FRAMES + ' コマだけ読みました' : '') +
+      '。費用 約' + yen(V.cost) + '円（速読 ' + V.nFast + '回・精読 ' + V.nPrecise + '回）。写真と読みを確かめて、チェックした分を保存してください',
+      V.errors ? 'err' : V.items.length ? '' : 'warn');
     $('btnVidSave').textContent = 'チェックした ' + n + ' 本を保存';
     $('btnVidSave').disabled = !n;
-    vidButtons({ btnVidSave: true, btnVidAll: V.items.some(function(it) { return it.canSave && !it.saved; }) });
+    vidButtons({ btnVidSave: true, btnVidAll: V.items.some(function(it) { return it.canSave && !it.saved && !it.checked; }) });
   }
 
   $('vidList').addEventListener('click', function(ev) {
@@ -2687,7 +2521,7 @@
     if (cb) { V.items[Number(cb.getAttribute('data-i'))].checked = cb.checked; vidRender(); }
   });
 
-  // チェックした分を保存（刻印のWを質量として）。標準から大きく外れるWは保存せずに残す
+  // 6) チェックした分を保存（刻印のWを質量として）。標準から大きく外れるWは保存せずに残す
   function vidSave() {
     if (S.stage !== 'num') resetEntry('容器番号を入力', 'info');
     let saved = 0, skipped = 0;
@@ -2703,7 +2537,7 @@
       lot.entries[serial] = mass;
       S.localOps.push({ lotId: lot.lotId, serial: serial, mass: mass, t: Date.now() });
       S.lastMass = mass; S.lastByLot[lot.lotId] = mass; S.lastKey = lot.lotId + '|' + serial;
-      call('saveKokuin', { lotId: lot.lotId, serial: serial, read: it.r, how: 'video', worker: worker(), device: $('fDevice').value.trim() })
+      call('saveKokuin', { lotId: lot.lotId, serial: serial, read: it.r, how: V.how, worker: worker(), device: $('fDevice').value.trim() })
         .catch(function() { /* 記録できなくても入力は続く */ });
       it.saved = true; saved++;
     });
@@ -2715,12 +2549,20 @@
 
   $('btnVidShoot').onclick = function() { this.blur(); $('vidShoot').value = ''; $('vidShoot').click(); };
   $('btnVidPick').onclick = function() { this.blur(); $('vidFile').value = ''; $('vidFile').click(); };
-  $('vidShoot').onchange = function() { vidOpen(this.files && this.files[0]); };
-  $('vidFile').onchange = function() { vidOpen(this.files && this.files[0]); };
-  $('btnVidRead').onclick = function() { vidRead(); };
-  $('btnVidStop').onclick = function() { V.stop = true; vidMsg('止めています…（読み取り中の分が終わるまで待ちます）', 'warn'); };
+  // ホーム画面からも撮れる（撮ったら入力画面を開いて読む）
+  function onShot(input) {
+    const f = input.files && input.files[0]; if (!f) return;
+    if ($('entry').classList.contains('hidden')) startEntry($('btnStartCam'), function() { vidOpen(f); });
+    else vidOpen(f);
+  }
+  $('vidShoot').onchange = function() { onShot(this); };
+  $('vidFile').onchange = function() { onShot(this); };
+  $('btnVidStop').onclick = function() {
+    V.stop = true; vidMsg('止めています…（読み取り中の分が終わるまで待ちます）', 'warn');
+    if (!V.running) { vidButtons({}); vidMsg('止めました', 'warn'); }
+  };
   $('btnVidSave').onclick = function() { vidSave(); };
-  $('btnVidAll').onclick = function() { V.items.forEach(function(it) { if (it.canSave && !it.saved && !it.m.err) it.checked = true; }); vidRender(); };
+  $('btnVidAll').onclick = function() { V.items.forEach(function(it) { if (it.canSave && !it.saved) it.checked = true; }); vidRender(); };
   $('btnVidClose').onclick = function() { vidClose(); };
 
   // ---------- キー入力 ----------

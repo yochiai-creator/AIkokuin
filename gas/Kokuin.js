@@ -1,15 +1,21 @@
 // ---------- 刻印の読み取り（AIkokuin で追加） ----------
-// iPadのカメラ映像から切り出した1枚（JPEG）を Claude API に送り、容器の刻印を読む。
-//   readKokuin({ image, hints })  … 読むだけ（記録はしない）
-//   saveKokuin(rec)              … 入力に使った読み取り結果を「刻印記録」シートに1行足す
+// iPadで撮った動画・写真のコマ（JPEG）を Claude API に送り、容器の刻印を読む。
+//   readKokuin({ images, tier, hints }) … 1本の容器を読むだけ（記録はしない）。tier: fast＝速読 / precise＝精読
+//   saveKokuin(rec)                    … 入力に使った読み取り結果を「刻印記録」シートに1行足す
 // APIキーはスクリプトプロパティ ANTHROPIC_API_KEY に入れる（コードやシートには書かない）。
-// モデルはスクリプトプロパティ KOKUIN_MODEL で変えられる（空なら KOKUIN_MODEL_DEFAULT）。
+// モデルはスクリプトプロパティ KOKUIN_MODEL_FAST（速読）・KOKUIN_MODEL（精読）で変えられる。
 
 const KOKUIN_SHEET = '刻印記録';
 const KOKUIN_HEADERS = ['記録日時', 'ロットID', '容器番号', '読取 記号', '読取 番号', '内容積V(L)', '質量W(kg)',
   '耐圧試験圧力TP(MPa)', '製造年月', 'その他の刻印', '確からしさ', '入力のしかた', '入力者', '端末', 'Googleアカウント', 'モデル', '備考',
   '総重量シール(kg)', 'W検算', '容器種別（読取）', '刻印の年月（そのまま）', 'キャップのグループNo', 'グループNo照合'];
+// 2段階で読む: まず全コマを速読（安いモデル）、確定できなかった容器だけ精読（高精度のモデルで複数コマをまとめて）。
+// スクリプトプロパティ KOKUIN_MODEL_FAST / KOKUIN_MODEL で変えられる
+const KOKUIN_MODEL_FAST_DEFAULT = 'claude-haiku-5-5';
 const KOKUIN_MODEL_DEFAULT = 'claude-opus-5-5';
+const KOKUIN_MAX_IMAGES = 4;   // 精読で1回に送るコマ数の上限
+// 費用の目安（USD / 100万トークン。入力・出力）。キャッシュ読み出しは入力の0.1倍、書き込みは1.25倍
+const KOKUIN_PRICES = { 'claude-haiku-5-5': [0.10, 0.50], 'claude-opus-5-5': [4, 20], 'claude-sonnet-5-5': [2, 10] };
 const KOKUIN_API_URL = 'https://api.anthropic.com/v1/messages';
 const KOKUIN_API_VERSION = '2026-10-21';
 const KOKUIN_FALLBACK_BETA = 'server-side-fallback-2026-07-01';
@@ -83,45 +89,64 @@ const KOKUIN_SYSTEM = [
   '刻印が写っていない・ぼけている・光って読めないときは readable を false にして、理由を note に短く書く。'
 ].join('\n');
 
-// 画面から呼ぶ: 1枚読んで結果を返す
+// 画面から呼ぶ: 1つの容器を読む。
+//   req.images: 同じ容器のコマ（base64 JPEG、1〜4枚）。req.image（1枚）も受け付ける
+//   req.tier: 'fast'（速読・既定）／ 'precise'（精読）
+//   返り値: 読み取り結果 ＋ model・tier・cost_usd（この1回の費用の目安）
 function readKokuin(req) {
   req = req || {};
-  const image = String(req.image || '').replace(/^data:image\/\w+;base64,/, '');
-  if (!image) throw new Error('画像がありません');
-  if (image.length > KOKUIN_IMAGE_MAX_CHARS) throw new Error('画像が大きすぎます（' + Math.round(image.length / 1024) + 'KB）');
+  const images = (Array.isArray(req.images) ? req.images : [req.image]).filter(function(x) { return x; }).slice(0, KOKUIN_MAX_IMAGES)
+    .map(function(x) { return String(x).replace(/^data:image\/\w+;base64,/, ''); });
+  if (!images.length) throw new Error('画像がありません');
+  images.forEach(function(im) {
+    if (im.length > KOKUIN_IMAGE_MAX_CHARS) throw new Error('画像が大きすぎます（' + Math.round(im.length / 1024) + 'KB）');
+  });
   const props = PropertiesService.getScriptProperties();
   const key = props.getProperty('ANTHROPIC_API_KEY');
   if (!key) {
     throw new Error('刻印読み取りのAPIキーが未設定です。Apps Script の「プロジェクトの設定 > スクリプト プロパティ」に ' +
       'ANTHROPIC_API_KEY を追加してください。');
   }
-  const model = props.getProperty('KOKUIN_MODEL') || KOKUIN_MODEL_DEFAULT;
+  const tier = req.tier === 'precise' ? 'precise' : 'fast';
+  const model = tier === 'precise' ? (props.getProperty('KOKUIN_MODEL') || KOKUIN_MODEL_DEFAULT)
+    : (props.getProperty('KOKUIN_MODEL_FAST') || KOKUIN_MODEL_FAST_DEFAULT);
+  const content = images.map(function(im) { return { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: im } }; });
+  content.push({ type: 'text', text: kokuinPrompt_(req.hints, images.length) });
   const body = {
     model: model,
     max_tokens: 4000,
-    system: KOKUIN_SYSTEM,
+    // 毎回同じルール文はキャッシュする（2回目からは入力の0.1倍の料金）
+    system: [{ type: 'text', text: KOKUIN_SYSTEM, cache_control: { type: 'ephemeral' } }],
     output_config: { effort: 'low', format: { type: 'json_schema', schema: KOKUIN_SCHEMA } },
-    // 安全側の判定で断られたときは、APIが別のモデルで読み直す
-    fallbacks: 'default',
-    messages: [{
-      role: 'user',
-      content: [
-        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: image } },
-        { type: 'text', text: kokuinPrompt_(req.hints) }
-      ]
-    }]
+    messages: [{ role: 'user', content: content }]
   };
+  // 安全側の判定で断られたときに別のモデルで読み直す仕組み（Haiku にはないので送らない）
+  const fallback = !/haiku/.test(model);
+  if (fallback) body.fallbacks = 'default';
   const started = Date.now();
-  const res = kokuinFetch_(key, body);
+  const res = kokuinFetch_(key, body, fallback);
   const out = parseKokuinResponse_(res);
   out.model = res.model || model;
+  out.tier = tier;
+  out.frames = images.length;
+  out.cost_usd = kokuinCost_(model, res.usage);
   out.ms = Date.now() - started;
   return out;
 }
 
+// 1回の費用の目安（USD）
+function kokuinCost_(model, u) {
+  const p = KOKUIN_PRICES[model]; if (!p || !u) return 0;
+  const inTok = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) * 0.1 + (u.cache_creation_input_tokens || 0) * 1.25;
+  return Math.round((inTok * p[0] + (u.output_tokens || 0) * p[1]) / 1e6 * 1e6) / 1e6;
+}
+
 // いま入力中のロットの記号と番号の範囲を手がかりとして渡す（画像と合わないときは画像を優先させる）
-function kokuinPrompt_(hints) {
-  let text = 'この写真の容器刻印を読み取ってください。';
+function kokuinPrompt_(hints, frames) {
+  let text = frames > 1
+    ? 'この ' + frames + ' 枚は、同じ1本の容器を動画の別々のコマで写したものです。全コマを見比べ、桁ごとに反射の少ないコマで確定して、1本分の刻印を読み取ってください。' +
+      'コマどうしで読みが食い違って決められない桁は ? にしてください。'
+    : 'この写真の容器刻印を読み取ってください。';
   const list = (Array.isArray(hints) ? hints : []).slice(0, 40).map(function(h) {
     return (String(h.prefix || '') + ' ' + String(h.start || '') + '〜' + String(h.end || '') + (h.kind ? '（' + h.kind + '）' : '')).trim();
   }).filter(String);
@@ -133,11 +158,13 @@ function kokuinPrompt_(hints) {
 }
 
 // API呼び出し。混雑（429・529）と一時的な 5xx は少し待って1回だけやり直す
-function kokuinFetch_(key, body) {
+function kokuinFetch_(key, body, fallback) {
+  const headers = { 'x-api-key': key, 'anthropic-version': KOKUIN_API_VERSION };
+  if (fallback) headers['anthropic-beta'] = KOKUIN_FALLBACK_BETA;
   const opt = {
     method: 'post',
     contentType: 'application/json',
-    headers: { 'x-api-key': key, 'anthropic-version': KOKUIN_API_VERSION, 'anthropic-beta': KOKUIN_FALLBACK_BETA },
+    headers: headers,
     payload: JSON.stringify(body),
     muteHttpExceptions: true
   };

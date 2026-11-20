@@ -1259,7 +1259,7 @@ function check(name, ok, detail) {
     const lg = m.ss.getSheetByName('入力記録'), rows = lg.getRange(2, 1, lg.getLastRow() - 1, 18).getValues().filter(r => r[2] === C.lotId);
     check('まとめて保存: 100本目で全数の知らせ（完了はしない）、その後の入力も入る', out.results.length === 101 && out.results[99].full === true && !out.results[99].completed && !out.results.slice(0, 99).some(r => r.full) && !out.error && rows.length === 101 && c.findLot_(C.lotId).status === '入力中', out.error + ' ' + rows.length);
   }
-  // ---- 刻印の読み取り（カメラ映像 → readKokuin → Claude API）。カメラは canvas の映像で代用し、APIの返事は模擬
+  // ---- 刻印の読み取り（サーバー: readKokuin → Claude API）。APIの返事は模擬
   {
     const m = load(), c = m.ctx; c.setup();
     const L = c.createLot({ prefix: 'HRH', start: '52001', kind: '20kg' });
@@ -1294,102 +1294,46 @@ function check(name, ok, detail) {
     const rg = c.readKokuin({ image: 'AAAA' }), rg2 = c.readKokuin({ image: 'AAAA' });
     check('刻印: キャップのグループNo（アプリのグループNoと同じ決め方）と照合する（現場の写真 HEP 36815 / キャップ369）', rg.group_check === 'OK' && rg.confidence === 'high' && rg.ym === '2026-06' && rg.w_check === 'OK', JSON.stringify(rg));
     check('刻印: グループNoが合わなければ確からしさを「中」に下げる', rg2.group_check === 'NG' && rg2.confidence === 'medium' && rg2.note.includes('369'), JSON.stringify(rg2));
-    check('刻印: 運用ルールの要点（0とC・月-年・シールは読まない）をAIに渡す', global.CLAUDE_REQS[global.CLAUDE_REQS.length - 1].body.system.includes('C様の字形は0') && global.CLAUDE_REQS[0].body.system.includes('7-26 は2026年7月'));
+    check('刻印: 運用ルールの要点（0とC・月-年・シールは読まない）をAIに渡す', global.CLAUDE_REQS[0].body.system[0].text.includes('C様の字形は0') && global.CLAUDE_REQS[0].body.system[0].text.includes('7-26 は2026年7月'));
+    // 速読（既定）: Haiku 5.5・Haiku には fallbacks を送らない・ルール文はキャッシュ
+    const q0 = global.CLAUDE_REQS[0];
+    check('刻印: 速読は claude-haiku-5-5・構造化出力・ルール文をキャッシュ・fallbacks なし', q0.body.model === 'claude-haiku-5-5' && q0.body.output_config.format.type === 'json_schema' &&
+      q0.body.output_config.effort === 'low' && q0.body.system[0].cache_control.type === 'ephemeral' && q0.body.fallbacks === undefined && !q0.opt.headers['anthropic-beta'] &&
+      q0.opt.headers['anthropic-version'] === '2026-10-21' && q0.opt.headers['x-api-key'] === 'sk-test', JSON.stringify(q0.opt.headers));
     global.CLAUDE_REQS = [];
-
-    const fakeCam = `<script>
-      window.__camCanvas = document.createElement('canvas'); __camCanvas.width = 640; __camCanvas.height = 480;
-      window.__camColor = '#cccccc';
-      window.__camPaint = function() { const g = __camCanvas.getContext('2d'); g.fillStyle = __camColor; g.fillRect(0, 0, 640, 480); g.fillStyle = '#000'; g.font = '80px sans-serif'; g.fillText('HRH 52005', 60, 260); };
-      __camPaint(); setInterval(__camPaint, 100);
-      Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: function() { return Promise.resolve(__camCanvas.captureStream(10)); } } });
-    </script>`;
-    const pk = await browser.newPage({ viewport: { width: 1180, height: 820 } });
-    pk.on('pageerror', e => check('ページでJSエラーなし(刻印)', false, e.message));
-    await pk.exposeFunction('__gas', (fn, arg) => {
-      try { const v = c[fn](JSON.parse(arg)); return JSON.stringify({ v: JSON.parse(JSON.stringify(v === undefined ? null : v)) }); }
-      catch (e) { return JSON.stringify({ err: e.message }); }
-    });
-    await pk.setContent(html.replace('<head>', '<head>' + fakeCam)); await pk.waitForTimeout(500);
-    await pk.evaluate(() => { const x = document.getElementById('dateOkMode'); x.checked = false; x.dispatchEvent(new Event('change')); });
-    await pk.selectOption('#fWorker', '山田'); await pk.fill('#fDevice', 'iPad-K');
-    check('刻印: ホーム画面にも「📷 刻印を読んで入力」がある', await pk.isVisible('#btnStartCam') && !(await pk.isDisabled('#btnStartCam')));
-    const kr = () => { const sh = m.ss.getSheetByName('刻印記録'); return sh && sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 21).getValues() : []; };
-    const paint = async (col) => { await pk.evaluate((x) => { window.__camColor = x; }, col); };
-
-    // 1本目: 確からしさ「高」→ そのまま質量の入力へ
-    global.CLAUDE_REPLIES.push(reply({ number: '52005' }));
-    await pk.click('#btnStartCam'); await pk.waitForTimeout(2600);
-    check('刻印: ホームのボタンで入力画面を開き、すぐカメラを起動', await pk.isVisible('#entry') && await pk.isVisible('#camBox'));
-    const req = global.CLAUDE_REQS[0] || { body: {}, opt: { headers: {} } }, b = req.body;
-    check('刻印: 容器が止まったら1コマ送る（JPEG）', global.CLAUDE_REQS.length === 1 && b.messages && b.messages[0].content[0].source.media_type === 'image/jpeg' && b.messages[0].content[0].source.data.length > 1000);
-    check('刻印: Opus 5.5・構造化出力・断られたときの切り替え（fallbacks）', b.model === 'claude-opus-5-5' && b.output_config.format.type === 'json_schema' && b.fallbacks === 'default' &&
-      req.opt.headers['anthropic-beta'] === 'server-side-fallback-2026-07-01' && req.opt.headers['anthropic-version'] === '2026-10-21' && req.opt.headers['x-api-key'] === 'sk-test', JSON.stringify(req.opt.headers));
-    check('刻印: 入力中ロットの記号と範囲・機種を手がかりに渡す', b.messages && b.messages[0].content[1].text.includes('HRH 52001〜52100（20kg）') && b.messages[0].content[1].text.includes('HEP 61001〜61100'));
-    check('刻印: 「高」なら読んだ番号で質量の入力に進み、刻印のWを先に入れる', (await pk.textContent('#sheetTitle')).includes('52005') && (await pk.textContent('#valMass')) === '16.7' &&
-      (await pk.textContent('#notice')).includes('シール17.2で検算OK') && (await pk.textContent('#notice')).includes('製造 2026-07'), await pk.textContent('#notice'));
-    let rows = kr();
-    check('刻印: 刻印記録シートに読み取り内容を残す', rows.length === 1 && rows[0][1] === L.lotId && rows[0][2] === '52005' && rows[0][3] === 'HRH' && rows[0][5] === '47' && rows[0][6] === '16.7' &&
-      rows[0][7] === '3.0' && rows[0][8] === '2026-07' && rows[0][10] === 'high' && rows[0][11] === 'auto' && rows[0][12] === '山田' && rows[0][13] === 'iPad-K' &&
-      rows[0][17] === '17.2' && rows[0][18] === 'OK' && rows[0][19] === '20kg' && rows[0][20] === '7-26', JSON.stringify(rows));
-    await pk.keyboard.press('NumpadEnter');
-    await pk.waitForTimeout(1500);
-    check('刻印: 先に入れたWは Enter だけで保存・写ったままなら、もう読まない', global.CLAUDE_REQS.length === 1 && c.getLot(L.lotId).entries['52005'] === 16.7, global.CLAUDE_REQS.length);
-
-    // 2本目: 確からしさ「中」→ もう一度読んで同じ番号なら入力
-    global.CLAUDE_REPLIES.push(reply({ number: '52006', confidence: 'medium' }), reply({ number: '52006', confidence: 'medium' }));
-    await paint('#ffffff'); await pk.waitForTimeout(800);
-    let seen = false;
-    for (let i = 0; i < 20 && global.CLAUDE_REQS.length < 3; i++) { await pk.waitForTimeout(150); if (await pk.isVisible('#btnCamUse')) seen = true; }
-    await pk.waitForTimeout(500);
-    check('刻印: 「中」は1回目では入力せず、2回続けて同じ番号なら入力', seen && global.CLAUDE_REQS.length === 3 && (await pk.textContent('#sheetTitle')).includes('52006'), global.CLAUDE_REQS.length);
-    rows = kr();
-    check('刻印: 2回読んで決めたことを記録', rows.length === 2 && rows[1][2] === '52006' && rows[1][11] === 'auto2', JSON.stringify(rows[1]));
-    check('刻印: Wは打ち直せる（数字を打つと先に入れた値を消す）', (await pk.textContent('#valMass')) === '16.7');
-    for (const ch of '168') await pk.keyboard.press('Numpad' + ch);
-    await pk.waitForTimeout(400);
-    check('刻印: 打ち直したWで保存', c.getLot(L.lotId).entries['52006'] === 16.8, JSON.stringify(c.getLot(L.lotId).entries['52006']));
-
-    // 3本目: 記号がロットと違う → 入力しない（番号違いの容器を入れない）
-    global.CLAUDE_REPLIES.push(reply({ number: '52007', symbol: 'HXX' }));
-    await paint('#777777'); await pk.waitForTimeout(3000);
-    check('刻印: 記号がロットと違えば入力しない（1回だけ読む）', global.CLAUDE_REQS.length === 4 && (await pk.textContent('#camStatus')).includes('記号が違います') &&
-      kr().length === 2 && (await pk.textContent('#sheetTitle')) === '', await pk.textContent('#camStatus'));
-
-    // 4本目: 読めない → 同じ場面では2回でやめる
-    global.CLAUDE_REPLIES.push(reply({ readable: false, number: '', note: '光って読めない' }), reply({ readable: false, number: '', note: '光って読めない' }));
-    await paint('#333333'); await pk.waitForTimeout(4000);
-    check('刻印: 読めない場面は2回でやめる（送りすぎない）', global.CLAUDE_REQS.length === 6 && (await pk.textContent('#camStatus')).includes('光って読めない'), global.CLAUDE_REQS.length + ' ' + await pk.textContent('#camStatus'));
-
-    // 確からしさ「低」・容器種別違い: 自動では入れず、ボタンで入れる
-    global.CLAUDE_REPLIES.push(reply({ number: '52010', tare_kg: '16.8', seal_kg: '17.1' }), reply({ number: '52011', kind: '50kg' }));
-    await paint('#aaaaaa'); await pk.waitForTimeout(2600);
-    check('刻印: W検算が合わない（低）は自動で入れない', global.CLAUDE_REQS.length === 7 && (await pk.textContent('#sheetTitle')) === '' && await pk.isVisible('#btnCamUse') &&
-      (await pk.textContent('#camStatus')).includes('確からしさが低'), global.CLAUDE_REQS.length + ' ' + await pk.textContent('#camStatus'));
-    await pk.click('#btnCamUse'); await pk.waitForTimeout(300);
-    check('刻印: 「低」でもボタンで入れられる（Wは検算NGなので入れない）', (await pk.textContent('#sheetTitle')).includes('52010') && (await pk.textContent('#valMass')) === '' && kr().slice(-1)[0][11] === 'button');
-    await pk.click('#btnSheetClose'); await pk.waitForTimeout(100);
-    await paint('#555555'); await pk.waitForTimeout(2600);
-    check('刻印: 容器種別がロットの機種と違えば自動で入れない', global.CLAUDE_REQS.length === 8 && (await pk.textContent('#sheetTitle')) === '' && (await pk.textContent('#camStatus')).includes('容器種別が違う'), await pk.textContent('#camStatus'));
-    global.CLAUDE_REPLIES.push(reply({ number: '52008' }));
-    // 「今すぐ読む」はいつでも読む
-    await pk.click('#btnCamNow'); await pk.waitForTimeout(800);
-    check('刻印: 「今すぐ読む」で読み直せる', global.CLAUDE_REQS.length === 9 && (await pk.textContent('#sheetTitle')).includes('52008'));
-    await pk.click('#btnSheetClose'); await pk.waitForTimeout(100);
-    await pk.click('#btnCamClose'); await pk.waitForTimeout(100);
-    check('刻印: 閉じるとカメラを止める', await pk.isHidden('#camBox') && await pk.evaluate(() => !document.getElementById('camVideo').srcObject));
-    await pk.close();
+    global.CLAUDE_REPLIES.push(Object.assign(reply({ number: '52005' }), {}));
+    global.CLAUDE_REPLIES[global.CLAUDE_REPLIES.length - 1].body.usage = { input_tokens: 4000, output_tokens: 500, cache_read_input_tokens: 2500 };
+    const rp = c.readKokuin({ images: ['AAAA', 'BBBB', 'CCCC', 'DDDD', 'EEEE'], tier: 'precise', hints: [{ prefix: 'HRH', start: '52001', end: '52100', kind: '20kg' }] });
+    const q1 = global.CLAUDE_REQS[0].body;
+    check('刻印: 精読は claude-opus-5-5・同じ容器の複数コマ（最大4枚）をまとめて・fallbacks あり', q1.model === 'claude-opus-5-5' && q1.fallbacks === 'default' &&
+      global.CLAUDE_REQS[0].opt.headers['anthropic-beta'] === 'server-side-fallback-2026-07-01' && q1.messages[0].content.filter(x => x.type === 'image').length === 4 &&
+      q1.messages[0].content[4].text.includes('同じ1本の容器') && q1.messages[0].content[4].text.includes('HRH 52001〜52100（20kg）') && rp.tier === 'precise' && rp.frames === 4);
+    check('刻印: 1回の費用の目安を返す（Opus: 入力4000＋キャッシュ2500×0.1、出力500）', Math.abs(rp.cost_usd - ((4000 + 250) * 4 + 500 * 20) / 1e6) < 1e-9, rp.cost_usd);
+    c.PropertiesService.getScriptProperties().setProperty('KOKUIN_MODEL_FAST', 'claude-sonnet-5-5');
+    global.CLAUDE_REQS = []; global.CLAUDE_REPLIES.push(reply({ number: '52005' })); c.readKokuin({ image: 'AAAA' });
+    check('刻印: 速読のモデルはスクリプトプロパティで変えられる（Haiku 以外は fallbacks を付ける）', global.CLAUDE_REQS[0].body.model === 'claude-sonnet-5-5' && global.CLAUDE_REQS[0].body.fallbacks === 'default');
   }
-  // ---- 動画から読む: ブラウザで録った5場面の動画 → コマ分け → 読み取り → まとめ → チェックした分を保存
+  // ---- 動画・写真から読む: ブラウザで録った5場面の動画 → コマ選び → 速読 → まとめ → 確定できない容器だけ精読 → チェックした分を保存
   {
     const m = load(), c = m.ctx; c.setup();
     const L = c.createLot({ prefix: 'HRH', start: '52001', kind: '20kg' });
     c.PropertiesService.getScriptProperties().setProperty('ANTHROPIC_API_KEY', 'sk-test');
-    const reply = (o) => ({ code: 200, body: { model: 'claude-opus-5-5', stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(Object.assign(
-      { readable: true, symbol: 'HRH', number: '', volume_l: '47', tare_kg: '16.7', seal_kg: '17.2', test_pressure_mpa: '3.0', manufactured: '7-26', kind: '20kg', other: '', confidence: 'high', note: '' }, o)) }] } });
+    const usage = { input_tokens: 2000, output_tokens: 300, cache_read_input_tokens: 2500 };
+    const reply = (o) => ({ code: 200, body: { model: 'x', stop_reason: 'end_turn', usage, content: [{ type: 'text', text: JSON.stringify(Object.assign(
+      { readable: true, symbol: 'HRH', number: '', volume_l: '47', tare_kg: '16.7', seal_kg: '17.2', test_pressure_mpa: '3.0', manufactured: '7-26', kind: '20kg', cap_number: '', other: '', confidence: 'high', note: '' }, o)) }] } });
     global.CLAUDE_REQS = [];
-    global.CLAUDE_REPLIES = [reply({ number: '52011' }), reply({ number: '52012', confidence: 'medium' }), reply({ number: '52012', confidence: 'medium' }),
-      reply({ number: '52013', tare_kg: '16.9', seal_kg: '17.1' }), reply({ number: '52014', kind: '50kg' })];
+    global.CLAUDE_REPLIES = [
+      // 速読（5コマ）
+      reply({ number: '52011' }),                                   // 1コマだけ → 精読へ
+      reply({ number: '52012', cap_number: '41' }),                 // 2コマ一致・W検算OK・グループNo OK → 速読で確定
+      reply({ number: '52012', cap_number: '41' }),
+      reply({ number: '52013', tare_kg: '16.9', seal_kg: '17.1' }), // W検算NG → 精読へ
+      reply({ number: '52014', kind: '50kg' }),                     // 1コマだけ → 精読へ
+      // 精読（3本）
+      reply({ number: '52011' }),
+      reply({ number: '52013', tare_kg: '16.6', seal_kg: '17.1' }), // 精読でWを読み直して検算OK
+      reply({ number: '52014', kind: '50kg' })                      // 種別がロットと違う
+    ];
     const pv = await browser.newPage({ viewport: { width: 820, height: 1180 } });
     pv.on('pageerror', e => check('ページでJSエラーなし(動画)', false, e.message));
     await pv.exposeFunction('__gas', (fn, arg) => {
@@ -1398,7 +1342,7 @@ function check(name, ok, detail) {
     });
     await pv.setContent(html); await pv.waitForTimeout(500);
     await pv.selectOption('#fWorker', '山田'); await pv.fill('#fDevice', 'iPad-V');
-    await pv.click('#btnStart'); await pv.waitForTimeout(200);
+    check('動画: ホーム画面に「🎬 撮って読む」がある', await pv.isVisible('#btnStartCam') && !(await pv.isDisabled('#btnStartCam')));
     // 5場面（色と文字が違う）を1.2秒ずつ録る
     const b64 = await pv.evaluate(async () => {
       const cv = document.createElement('canvas'); cv.width = 320; cv.height = 240; const g = cv.getContext('2d');
@@ -1414,27 +1358,41 @@ function check(name, ok, detail) {
       let s = ''; for (let i = 0; i < buf.length; i += 8192) s += String.fromCharCode.apply(null, buf.subarray(i, i + 8192));
       return btoa(s);
     });
-    await pv.setInputFiles('#vidFile', { name: 'line.webm', mimeType: 'video/webm', buffer: Buffer.from(b64, 'base64') });
-    for (let i = 0; i < 60 && !(await pv.isVisible('#btnVidRead')); i++) await pv.waitForTimeout(250);
-    const msg1 = await pv.textContent('#vidMsg');
-    check('動画: 場面ごとに1コマ選び、読む前に費用の目安を出す（APIはまだ呼ばない）', msg1.includes('5 コマを選びました') && msg1.includes('約 5〜15 円') && global.CLAUDE_REQS.length === 0, msg1);
-    await pv.click('#btnVidRead');
-    for (let i = 0; i < 60 && !(await pv.isVisible('#btnVidSave')); i++) await pv.waitForTimeout(250);
+    // ホーム画面のまま撮った動画を渡す → 入力画面を開いて、そのまま読む
+    await pv.setInputFiles('#vidShoot', { name: 'line.webm', mimeType: 'video/webm', buffer: Buffer.from(b64, 'base64') });
+    for (let i = 0; i < 80 && !(await pv.isVisible('#btnVidSave')); i++) await pv.waitForTimeout(250);
     const rows = await pv.$$eval('.vid-row', els => els.map(e => ({ t: e.textContent, ck: e.querySelector('input').checked, dis: e.querySelector('input').disabled })));
-    check('動画: 5コマを読んで、続けて同じ番号はまとめて4本', global.CLAUDE_REQS.length === 5 && rows.length === 4, JSON.stringify(rows));
-    check('動画: 「高」と「中×2コマ一致」はチェック済み、W検算NGは保存不可、種別違いは未チェック',
-      rows[0] && rows[0].ck && rows[1].ck && rows[1].t.includes('2コマで一致') && rows[2].dis && rows[2].t.includes('W検算') && !rows[3].ck && !rows[3].dis && rows[3].t.includes('容器種別'), JSON.stringify(rows));
+    const models = global.CLAUDE_REQS.map(q => q.body.model);
+    check('動画: ホームから撮っても入力画面を開いて読む', await pv.isVisible('#entry'));
+    check('動画: 5コマを速読（Haiku）、確定できない3本だけ精読（Opus）', models.length === 8 && models.slice(0, 5).every(x => x === 'claude-haiku-5-5') && models.slice(5).every(x => x === 'claude-opus-5-5'), JSON.stringify(models));
+    check('動画: 続けて同じ番号のコマは1本にまとめて4本', rows.length === 4, JSON.stringify(rows));
+    check('動画: 速読で2コマ一致＋検算・グループNo OK は確定、精読で直ったものもチェック、種別違いは未チェック',
+      rows[0] && rows[0].ck && rows[0].t.includes('精読') && rows[1].ck && rows[1].t.includes('速読 2コマ一致') && rows[2].ck && rows[2].t.includes('W16.6') && !rows[3].ck && !rows[3].dis && rows[3].t.includes('容器種別'), JSON.stringify(rows));
+    const msg = await pv.textContent('#vidMsg');
+    check('動画: かかった費用の目安を出す（速読5回・精読3回）', msg.includes('速読 5回・精読 3回') && /費用 約\d+円/.test(msg), msg);
     if (process.env.SHOT_DIR) await pv.screenshot({ path: process.env.SHOT_DIR + '/video_list.png' });   // 見た目の確認用（SHOT_DIR を付けて実行したときだけ）
     await pv.click('#btnVidSave'); await pv.waitForTimeout(1500);
     const ent = c.getLot(L.lotId).entries;
-    check('動画: チェックした2本を刻印のWで保存（ほかは保存しない）', ent['52011'] === 16.7 && ent['52012'] === 16.7 && ent['52013'] === undefined && ent['52014'] === undefined, JSON.stringify(ent));
-    const ks = m.ss.getSheetByName('刻印記録'), kv = ks.getRange(2, 1, ks.getLastRow() - 1, 21).getValues();
-    check('動画: 刻印記録に「video」で残す', kv.length === 2 && kv.every(r => r[11] === 'video'), JSON.stringify(kv.map(r => r[2] + ':' + r[11])));
+    check('動画: チェックした3本を刻印のWで保存（種別違いは保存しない）', ent['52011'] === 16.7 && ent['52012'] === 16.7 && ent['52013'] === 16.6 && ent['52014'] === undefined, JSON.stringify(ent));
+    const ks = m.ss.getSheetByName('刻印記録'), kv = ks.getRange(2, 1, ks.getLastRow() - 1, 23).getValues();
+    check('動画: 刻印記録に「video」で残す', kv.length === 3 && kv.every(r => r[11] === 'video'), JSON.stringify(kv.map(r => r[2] + ':' + r[11])));
     await pv.click('#btnVidAll'); await pv.waitForTimeout(100);
     await pv.click('#btnVidSave'); await pv.waitForTimeout(1500);
-    check('動画: 「全部チェック」で残りの保存できる分（種別違い）も保存、W検算NGは保存しない', c.getLot(L.lotId).entries['52014'] === 16.7 && c.getLot(L.lotId).entries['52013'] === undefined);
+    check('動画: 「全部チェック」で残り（種別違い）も保存できる', c.getLot(L.lotId).entries['52014'] === 16.7);
     await pv.click('#btnVidClose'); await pv.waitForTimeout(200);
     check('動画: 閉じると入力画面に戻る', await pv.isHidden('#vidPanel') && await pv.isVisible('#entry'));
+
+    // 写真1枚: 1コマなので速読のあと精読して確定
+    global.CLAUDE_REQS = [];
+    global.CLAUDE_REPLIES = [reply({ number: '52015' }), reply({ number: '52015' })];
+    const jpg = await pv.evaluate(() => { const cv = document.createElement('canvas'); cv.width = 400; cv.height = 300; const g = cv.getContext('2d'); g.fillStyle = '#ddd'; g.fillRect(0, 0, 400, 300); return cv.toDataURL('image/jpeg').split(',')[1]; });
+    await pv.setInputFiles('#vidFile', { name: 'one.jpg', mimeType: 'image/jpeg', buffer: Buffer.from(jpg, 'base64') });
+    for (let i = 0; i < 40 && !(await pv.isVisible('#btnVidSave')); i++) await pv.waitForTimeout(250);
+    const prow = await pv.$$eval('.vid-row', els => els.map(e => ({ t: e.textContent, ck: e.querySelector('input').checked })));
+    check('写真: 1枚でも同じ一覧で読む（速読→精読）', global.CLAUDE_REQS.length === 2 && prow.length === 1 && prow[0].ck && prow[0].t.includes('52015'), JSON.stringify(prow));
+    await pv.click('#btnVidSave'); await pv.waitForTimeout(1200);
+    const kv2 = ks.getRange(2, 1, ks.getLastRow() - 1, 23).getValues();
+    check('写真: 保存して刻印記録に「photo」で残す', c.getLot(L.lotId).entries['52015'] === 16.7 && kv2[kv2.length - 1][11] === 'photo');
     await pv.close();
   }
   await browser.close();
