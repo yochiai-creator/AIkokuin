@@ -1289,6 +1289,11 @@ function check(name, ok, detail) {
     global.CLAUDE_REPLIES.push(reply({ number: '52005', tare_kg: '16.8', seal_kg: '17.1' }));
     const rn = c.readKokuin({ image: 'AAAA' });
     check('刻印: W検算が合わなければ確からしさ「低」', rn.w_check === 'NG' && rn.confidence === 'low' && rn.note.includes('W検算'), JSON.stringify(rn));
+    global.CLAUDE_REPLIES.push(reply({ symbol: 'HEP', number: '36815', tare_kg: '34.9', seal_kg: '35.4', manufactured: '6-26', kind: '50kg', cap_number: '369' }),
+      reply({ symbol: 'HEP', number: '36815', tare_kg: '34.9', seal_kg: '35.4', manufactured: '6-26', kind: '50kg', cap_number: '379' }));
+    const rg = c.readKokuin({ image: 'AAAA' }), rg2 = c.readKokuin({ image: 'AAAA' });
+    check('刻印: キャップのグループNo（アプリのグループNoと同じ決め方）と照合する（現場の写真 HEP 36815 / キャップ369）', rg.group_check === 'OK' && rg.confidence === 'high' && rg.ym === '2026-06' && rg.w_check === 'OK', JSON.stringify(rg));
+    check('刻印: グループNoが合わなければ確からしさを「中」に下げる', rg2.group_check === 'NG' && rg2.confidence === 'medium' && rg2.note.includes('369'), JSON.stringify(rg2));
     check('刻印: 運用ルールの要点（0とC・月-年・シールは読まない）をAIに渡す', global.CLAUDE_REQS[global.CLAUDE_REQS.length - 1].body.system.includes('C様の字形は0') && global.CLAUDE_REQS[0].body.system.includes('7-26 は2026年7月'));
     global.CLAUDE_REQS = [];
 

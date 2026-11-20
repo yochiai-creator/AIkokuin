@@ -8,7 +8,7 @@
 const KOKUIN_SHEET = '刻印記録';
 const KOKUIN_HEADERS = ['記録日時', 'ロットID', '容器番号', '読取 記号', '読取 番号', '内容積V(L)', '質量W(kg)',
   '耐圧試験圧力TP(MPa)', '製造年月', 'その他の刻印', '確からしさ', '入力のしかた', '入力者', '端末', 'Googleアカウント', 'モデル', '備考',
-  '総重量シール(kg)', 'W検算', '容器種別（読取）', '刻印の年月（そのまま）'];
+  '総重量シール(kg)', 'W検算', '容器種別（読取）', '刻印の年月（そのまま）', 'キャップのグループNo', 'グループNo照合'];
 const KOKUIN_MODEL_DEFAULT = 'claude-opus-5-5';
 const KOKUIN_API_URL = 'https://api.anthropic.com/v1/messages';
 const KOKUIN_API_VERSION = '2026-10-21';
@@ -32,11 +32,12 @@ const KOKUIN_SCHEMA = {
     test_pressure_mpa: { type: 'string', description: '耐圧試験圧力 TP（数字だけ。例 3.0）' },
     manufactured: { type: 'string', description: '刻印の年月を刻印のとおりに（例 7-26）' },
     kind: { type: 'string', enum: KOKUIN_KINDS, description: '容器種別' },
+    cap_number: { type: 'string', description: 'バルブのキャップ・保護フィルムに手書きされたグループNo（数字だけ。例 369）。写っていなければ空文字' },
     other: { type: 'string', description: 'そのほかに読めた刻印（LPガス・菱形マーク・※など以外の記号）を空白区切りで' },
     confidence: { type: 'string', enum: ['high', 'medium', 'low'], description: '容器番号とWの読みの確からしさ' },
     note: { type: 'string', description: '迷った桁・反射・重ね打ちなど（短く。なければ空文字）' }
   },
-  required: ['readable', 'symbol', 'number', 'volume_l', 'tare_kg', 'seal_kg', 'test_pressure_mpa', 'manufactured', 'kind', 'other', 'confidence', 'note'],
+  required: ['readable', 'symbol', 'number', 'volume_l', 'tare_kg', 'seal_kg', 'test_pressure_mpa', 'manufactured', 'kind', 'cap_number', 'other', 'confidence', 'note'],
   additionalProperties: false
 };
 
@@ -55,6 +56,9 @@ const KOKUIN_SYSTEM = [
   '・20kgは特殊配置で、V47とW値が縦2段に重なり、年月・TPが斜めに散る。位置で機械的に読まず、記号/番号/V/W/年月/TP をラベルで見分けてから読む。',
   '・字体は数字がOCRB書体（タイプライター用R型）、英字はR型。迷ったらOCRBの字形で照合する。記号の英字はA〜Zのどれもあり得る。',
   '・年月は「月-年（西暦下2桁）」。7-26 は2026年7月。刻印のとおり manufactured に書く。TPは TP3.0M が正（小数点が見えなくても 3.0）。',
+  '・V値は小数点が見えないことがある。50kgの「V1175」は 117.5、5kgの「V118」は 11.8、10kgの「V235」は 23.5、30kgの「V705」は 70.5、40kgの「V855」は 85.5 として volume_l に書く。',
+  '・50kg（標準2段）の例: 上段「※ ◇」の下に「LPガス V1175 TP3.0M」、その下の段に「HEP 36815 W 34.9 6-26」。総重量シール（「軽量 総重量 35.4kg」）は刻印の左上に貼られている。',
+  '・バルブのキャップ（保護フィルム）に手書きの数字があれば、それはグループNo（容器番号から決まる組の番号。例 50kgの 36815 → 369）。cap_number に書く。刻印として読めない桁を埋めるのには使わない。',
   '',
   '【誤読しやすい字形】',
   '・0とC: 0の右側が反射で欠けるとCに見える。刻印の数字の位置にCは出ないので、C様の字形は0と判断する。',
@@ -155,7 +159,7 @@ function kokuinFetch_(key, body) {
 // 返事から結果を取り出す。断られた・途中で切れたときは「読めない」として返す
 function parseKokuinResponse_(res) {
   const empty = { readable: false, symbol: '', number: '', volume_l: '', tare_kg: '', seal_kg: '', test_pressure_mpa: '',
-    manufactured: '', ym: '', kind: '不明', other: '', confidence: 'low', note: '', w_check: '', w_from_seal: false };
+    manufactured: '', ym: '', kind: '不明', cap_number: '', group_check: '', other: '', confidence: 'low', note: '', w_check: '', w_from_seal: false };
   if (res.stop_reason === 'refusal') { empty.note = '読み取りを断られました'; return empty; }
   if (res.stop_reason === 'max_tokens') { empty.note = '読み取りが途中で切れました'; return empty; }
   const block = (res.content || []).filter(function(b) { return b.type === 'text'; }).pop();
@@ -179,6 +183,8 @@ function parseKokuinResponse_(res) {
   // 番号は5桁すべて読めたときだけ使う（? が残る・桁が足りないものは入力に使わない）
   if (!/^\d{5,}$/.test(out.number)) out.readable = false;
   if (out.symbol.indexOf('?') >= 0) out.symbol = '';
+  out.cap_number = num(o.cap_number).replace(/\./g, '');
+  kokuinCheckGroup_(out);
   kokuinCheckW_(out);
   return out;
 }
@@ -202,6 +208,21 @@ function kokuinCheckW_(out) {
   if (!/^\d+\.\d$/.test(out.tare_kg)) out.tare_kg = '';
 }
 
+// グループNo の照合: キャップの手書きの数字 ＝ このアプリのグループNo（groupNoOf_。50kg・30kg系は100本ごと、
+// 20kg以下は50本ごと。例 50kg 36815 → 369）。種別が分からないときは照合しない。
+// 合わなければ番号の誤読を疑い、確からしさを「中」以下にする
+function kokuinCheckGroup_(out) {
+  out.group_check = '';
+  if (!/^\d{5}$/.test(out.number) || !/^\d{1,4}$/.test(out.cap_number)) return;
+  const expect = groupNoOf_(out.kind, out.number);
+  if (expect === '') return;
+  out.group_check = Number(out.cap_number) === expect ? 'OK' : 'NG';
+  if (out.group_check === 'NG') {
+    if (out.confidence === 'high') out.confidence = 'medium';
+    out.note = (out.note ? out.note + ' / ' : '') + 'キャップのグループNo ' + out.cap_number + ' と番号が合わない（' + out.number + ' なら ' + expect + '）';
+  }
+}
+
 // 刻印の年月「7-26」（月-年の下2桁）→「2026-07」。形が違えば空
 function kokuinYm_(text) {
   const m = String(text || '').match(/^(\d{1,2})\s*[-－.]\s*(\d{2})$/);
@@ -223,7 +244,8 @@ function saveKokuin(rec) {
       String(r.volume_l || ''), String(r.tare_kg || ''), String(r.test_pressure_mpa || ''), "'" + String(r.ym || ''),
       String(r.other || ''), String(r.confidence || ''), String(rec.how || ''), String(rec.worker || ''), String(rec.device || ''),
       account, String(r.model || ''), String(r.note || ''),
-      String(r.seal_kg || ''), String(r.w_check || ''), String(r.kind || ''), "'" + String(r.manufactured || '')]);
+      String(r.seal_kg || ''), String(r.w_check || ''), String(r.kind || ''), "'" + String(r.manufactured || ''),
+      "'" + String(r.cap_number || ''), String(r.group_check || '')]);
   } finally {
     lock.releaseLock();
   }

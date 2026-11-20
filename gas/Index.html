@@ -337,7 +337,7 @@
 <div class="sp-sub">読み込み中…</div></div>
 <script>window.SPLASH_T0 = Date.now();</script>
 <header>
-  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v3（動画を撮って刻印をまとめて読む）</span></h1>
+  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v4（動画で刻印をまとめて読む・キャップのグループNo照合）</span></h1>
   <span class="user" id="workerBadge"></span>
   <span class="user" id="user"></span>
   <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
@@ -2231,7 +2231,7 @@
     TICK_MS: 600,       // 映像を見る間隔
     STEADY: 6,          // 前のコマとの差がこれ未満なら「止まっている」
     MOVED: 14,          // 読み取った容器からの差がこれ以上なら「次の容器に替わった」
-    MAX_SIDE: 1600,     // 送る画像の長い辺（px）
+    MAX_SIDE: 1568,     // 送る画像の長い辺（px。Claude はこれより大きい画像を縮めて読むので、これ以上は送らない）
     FAIL_LIMIT: 2       // 同じ場面で読めなかったら、場面が変わるまで送らない回数
   };
   const K = { on: false, stream: null, timer: null, busy: false, photo: false,
@@ -2288,9 +2288,11 @@
     return t / a.length;
   }
 
-  // 枠の中（左右5%・上下10%を除く）を切り出し、長い辺を CAM.MAX_SIDE 以下にしてJPEGにする
+  // 切り出して、長い辺を CAM.MAX_SIDE 以下にしてJPEGにする。
+  // crop: true = ライブ映像の枠の中（左右5%・上下10%を除く）／ 'video' = 動画（左右10%・下15%を除く。キャップ・シール・刻印は残す）
   function grabJpeg(src, w, h, crop) {
-    const sx = crop ? w * 0.05 : 0, sy = crop ? h * 0.10 : 0, sw = w - sx * 2, sh = h - sy * 2;
+    const box = crop === 'video' ? [0.10, 0.02, 0.80, 0.83] : crop ? [0.05, 0.10, 0.90, 0.80] : [0, 0, 1, 1];
+    const sx = w * box[0], sy = h * box[1], sw = w * box[2], sh = h * box[3];
     const k = Math.min(1, CAM.MAX_SIDE / Math.max(sw, sh));
     const c = document.createElement('canvas'); c.width = Math.round(sw * k); c.height = Math.round(sh * k);
     c.getContext('2d').drawImage(src, sx, sy, sw, sh, 0, 0, c.width, c.height);
@@ -2337,6 +2339,7 @@
     if (r.seal_kg) parts.push('シール' + r.seal_kg + (r.w_check === 'OK' ? ' 検算OK' : r.w_check === 'NG' ? ' 検算NG' : ''));
     if (r.test_pressure_mpa) parts.push('TP' + r.test_pressure_mpa);
     if (r.manufactured) parts.push('製造 ' + (r.ym || r.manufactured));
+    if (r.cap_number) parts.push('キャップ' + r.cap_number + (r.group_check === 'OK' ? ' 照合OK' : r.group_check === 'NG' ? ' 照合NG' : ''));
     return parts.join('・');
   }
   // ロットの容器区分と読み取った種別が合うか（30kg把手は30kg として見る。読めなければ合うとみなす）
@@ -2583,7 +2586,8 @@
       if (V.stop || next >= total) return Promise.resolve(false);
       const p = picks[next++];
       return vidSeek(v, p.t).then(function() {
-        const image = grabJpeg(v, v.videoWidth, v.videoHeight, false);
+        // 横長の動画（1920×1080 など）は真ん中を切り出して、刻印を縮めずに送る（現場の動画で刻印は中央やや下に小さく写る）
+        const image = grabJpeg(v, v.videoWidth, v.videoHeight, v.videoWidth > v.videoHeight ? 'video' : false);
         const k = 200 / v.videoWidth, c = document.createElement('canvas');
         c.width = 200; c.height = Math.round(v.videoHeight * k);
         c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
