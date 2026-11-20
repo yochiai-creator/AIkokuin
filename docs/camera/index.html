@@ -20,6 +20,9 @@
   #zone.armed { border-color: #4fd18b; }
   #zone.shot { border-color: #fff; background: rgba(255,255,255,.35); }
   #zone .lbl { position: absolute; left: 4px; top: 2px; font-size: 13px; font-weight: 700; text-shadow: 0 1px 2px #000; }
+  #tmpl { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  #tmpl text { fill: rgba(255, 211, 77, .55); stroke: rgba(0,0,0,.35); stroke-width: 1.5; paint-order: stroke; font-family: "OCR B", "OCRB", Menlo, monospace; }
+  #tmpl .band { fill: rgba(255, 211, 77, .10); }
   #crop { position: absolute; border: 2px dashed rgba(255,255,255,.9); border-radius: 4px; touch-action: none; }
   #crop .lbl { position: absolute; right: 4px; top: 2px; font-size: 12px; text-shadow: 0 1px 2px #000; }
   #crop .handle { position: absolute; right: -12px; bottom: -12px; width: 24px; height: 24px; border-radius: 50%; background: #fff; border: 2px solid #000; }
@@ -56,7 +59,7 @@
 <div id="stage">
   <video id="video" playsinline muted autoplay></video>
   <div id="crop"><span class="lbl">保存する範囲</span><span class="handle" id="cropHandle"></span></div>
-  <div id="zone"><span class="lbl">検知範囲</span><span class="handle" id="handle"></span></div>
+  <div id="zone"><svg id="tmpl" viewBox="130 70 740 240" preserveAspectRatio="none"></svg><span class="lbl">検知範囲</span><span class="handle" id="handle"></span></div>
   <div id="state">カメラを起動しています…</div>
   <div id="meter"><div id="meterBar"></div></div>
 </div>
@@ -74,6 +77,8 @@
   </div>
 </div>
 <div id="settings" class="hidden">
+  <label>容器の種類（刻印の型）</label>
+  <select id="sKind" style="width:100%;font-size:16px;padding:6px"></select>
   <label>撮り方</label>
   <div class="row" style="color:#1b2240;font-size:15px">
     <label style="margin:0;font-weight:400"><input type="radio" name="mode" value="flow"> 流れる（刻印が枠を通ったら撮る）</label>
@@ -108,7 +113,7 @@
   </div>
   <div class="note">
     iPadを固定して使います（枠をドラッグで移動、右下の丸で大きさ）。<br>
-    <b>流れる</b>: 黄色い枠を<b>刻印（例「HEP 36815 W 34.9 6-26」の2段）が通る位置</b>に合わせます（刻印の文字がちょうど収まるくらい）。<br>
+    <b>流れる</b>: 「容器の種類」を選ぶと、黄色い枠の中にその容器の<b>刻印の型</b>（神鋼機器工業の刻印配置図の並び）が出ます。映像の刻印に型が重なるように、枠を動かして大きさを合わせてください。型の文字が通る帯の中だけを見て、刻印が通ったら撮ります。<br>
     白い点線は<b>保存する範囲</b>です。刻印・総重量シール・キャップが入るように合わせると、刻印が大きく写って読み取りが正確で安くなります（黄色い枠を動かすと点線もついてきます。点線を自分で動かすと、それ以後は別々に動きます）。<br>
     光った反射が刻印にかかったコマは選ばないようにしています。反射が多いときは、iPadの角度や照明を変えてください。<br>
     刻印が枠を通るあいだで一番くっきりしたコマ（ぶれが少なく枠の中央にある瞬間）を、通り過ぎたときに撮ります。「開始」を押したら最初の1秒は刻印のない状態を覚えるので、枠に刻印がないときに押してください。<br>
@@ -146,7 +151,8 @@
     burst: store.get('burst', 2),
     stillMs: store.get('stillMs', 600),
     sens: store.get('sens', 5),
-    zone: store.get('zone', { x: 0.25, y: 0.25, w: 0.5, h: 0.5 }),  // 映像に対する割合
+    zone: store.get('zone', { x: 0.25, y: 0.34, w: 0.5, h: 0.29 }),  // 映像に対する割合（刻印の型の縦横 740:240 に合わせた大きさ）
+    kind: store.get('kind', '50kg'),    // 刻印の型（KINDS）
     mode: store.get('mode', 'flow'),    // flow: 流れる（刻印が枠を通ったら） / stop: 止まる（止まったら）
     cropMode: store.get('cropMode', 'around'),   // around: 刻印のまわりだけ保存 / full: 画面全体
     crop: store.get('crop', null),               // 保存する範囲（null なら刻印の枠から自動）
@@ -300,6 +306,87 @@
   // ふだんの値＝直近5秒の低い方から3割の値。それより riseK() 倍以上になったら「通過中」。通過中は模様が多く
   // ぶれの少ないコマを1本あたりの枚数ぶん覚えておき（近すぎるコマは良い方だけ）、下がったら（通り過ぎたら）写真にする。
   // 床のすき間や光った肩で余分に撮れることはあるが、読み取り側で「読めない」「同じ番号」としてまとめられる（撮り逃すよりよい）
+  // ---------- 刻印の型（神鋼機器工業「小型容器刻印配置図」より） ----------
+  // 刻印は肩部に「下にふくらむ弧」で並ぶ。型は viewBox（VB）の中に、中心 (500, ARC_CY) の円弧として描く。
+  // 曲がり具合は現場の写真（50kg HEP 36815）で合わせた: 下の段の半径に対し、半分の幅 ≈ 0.58、段の間隔 ≈ 0.12、文字の高さ ≈ 0.075。
+  // 標準2段（20kg以外）: 上の段「LPガス V値 TP3.0M」、下の段「記号 番号 W値 年月」、その上に「※ ◇」
+  //   （現場の写真 HEP 36815 W 34.9 6-26 と同じ並び）。20kg は扇形の特殊配置で3段。
+  // 字体は数字 OCRB（高さ10×幅7）。型は位置合わせの目安で、文字の通る「帯」の中だけで模様を測る。
+  const ARC_CX = 500, ARC_CY = -314, VB = { x: 130, y: 70, w: 740, h: 240 };
+  function stdKind(sym, v, w) {
+    return { lines: [
+      { r: 470, span: 0.09, fs: 34, text: '※    ◇' },
+      { r: 530, span: 0.56, fs: 44, text: 'LPガス  V ' + v + '  TP3.0M' },
+      { r: 600, span: 0.62, fs: 46, text: sym + ' 00001  W ' + w + '  12-26' }
+    ] };
+  }
+  const KINDS = {
+    '5kg': stdKind('HRH', '11.8', '6.8'),
+    '8kg': stdKind('HXU', '19', '9.6'),
+    '10kg': stdKind('HCY', '23.5', '11.2'),
+    '20kg': { lines: [   // 図番31SM7247: 扇形。「※」「HXC LPガス ◇ V 47」「W 16.9」「00001 12-17 TP3.0M」
+      { r: 470, span: 0.50, fs: 42, text: 'HXC LPガス  ◇  V 47' },
+      { r: 530, span: 0.20, fs: 44, text: 'W 16.9', shift: 0.12 },
+      { r: 600, span: 0.60, fs: 46, text: '00001  12-17  TP3.0M' }
+    ] },
+    '20kg三部制': stdKind('HHL', '47', '17.5'),
+    '30kg': stdKind('HAM', '70.5', '23.9'),
+    '40kg': stdKind('HDF', '85.5', '28.4'),
+    '50kg': stdKind('HEA', '117.5', '34.9'),
+    '50kg S付': stdKind('HHZ', '117.5', '36.2')
+  };
+  function kindDef() { return KINDS[cfg.kind] || KINDS['50kg']; }
+  // 弧の上の点（a: 真下からの角度、右が正）
+  function arcPt(r, a) { return { x: ARC_CX + r * Math.sin(a), y: ARC_CY + r * Math.cos(a) }; }
+  function drawTemplate() {
+    const svg = $('tmpl'), k = kindDef(), NS = 'http://www.w3.org/2000/svg';
+    svg.innerHTML = '';
+    if (cfg.mode !== 'flow') return;
+    const defs = document.createElementNS(NS, 'defs'); svg.appendChild(defs);
+    k.lines.forEach(function(L, i) {
+      const c = L.shift || 0, a0 = c - L.span, a1 = c + L.span;
+      // 文字の通る帯（ベースラインから文字の高さぶん中心側）
+      const ro = L.r + L.fs * 0.15, ri = L.r - L.fs * 0.95;
+      const p0 = arcPt(ro, a0), p1 = arcPt(ro, a1), q1 = arcPt(ri, a1), q0 = arcPt(ri, a0);
+      const band = document.createElementNS(NS, 'path');
+      band.setAttribute('class', 'band');
+      band.setAttribute('d', 'M' + p0.x + ' ' + p0.y + ' A' + ro + ' ' + ro + ' 0 0 0 ' + p1.x + ' ' + p1.y +
+        ' L' + q1.x + ' ' + q1.y + ' A' + ri + ' ' + ri + ' 0 0 1 ' + q0.x + ' ' + q0.y + ' Z');
+      svg.appendChild(band);
+      // 文字（弧に沿って、上が中心側）
+      const s0 = arcPt(L.r, a0), s1 = arcPt(L.r, a1), id = 'arc' + i;
+      const path = document.createElementNS(NS, 'path');
+      path.setAttribute('id', id);
+      path.setAttribute('d', 'M' + s0.x + ' ' + s0.y + ' A' + L.r + ' ' + L.r + ' 0 0 0 ' + s1.x + ' ' + s1.y);
+      defs.appendChild(path);
+      const t = document.createElementNS(NS, 'text'), tp = document.createElementNS(NS, 'textPath');
+      t.setAttribute('font-size', L.fs);
+      tp.setAttribute('href', '#' + id); tp.setAttributeNS('http://www.w3.org/1999/xlink', 'href', '#' + id);
+      tp.setAttribute('startOffset', '50%'); tp.setAttribute('text-anchor', 'middle');
+      tp.setAttribute('textLength', Math.round(L.r * L.span * 2 * 0.96)); tp.setAttribute('lengthAdjust', 'spacing');
+      tp.textContent = L.text;
+      t.appendChild(tp); svg.appendChild(t);
+    });
+  }
+  // 測る画素の「帯」の印（W×H、型が変わったときだけ作り直す）
+  let bandMask = null, bandKey = '';
+  function bandOf(W, H) {
+    const key = W + 'x' + H + ':' + cfg.kind;
+    if (bandKey === key) return bandMask;
+    const m = new Uint8Array(W * H), k = kindDef();
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const vx = VB.x + (x + 0.5) / W * VB.w, vy = VB.y + (y + 0.5) / H * VB.h;
+      const dx = vx - ARC_CX, dy = vy - ARC_CY, r = Math.sqrt(dx * dx + dy * dy), a = Math.atan2(dx, dy);
+      for (let i = 0; i < k.lines.length; i++) {
+        const L = k.lines[i], c = L.shift || 0;
+        // 帯は少し広めに（型と実物が少しずれても拾う）
+        if (r <= L.r + L.fs * 0.5 && r >= L.r - L.fs * 1.3 && Math.abs(a - c) <= L.span + 0.04) { m[y * W + x] = 1; break; }
+      }
+    }
+    bandMask = m; bandKey = key;
+    return m;
+  }
+
   const TW = 192;
   const texCanvas = document.createElement('canvas');
   function zoneTexture() {
@@ -312,8 +399,10 @@
     const d = g.getImageData(0, 0, W, H).data, a = new Float32Array(W * H);
     for (let i = 0; i < a.length; i++) a[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
     let t = 0, n = 0, tx = 0, glare = 0;
+    const band = bandOf(W, H);   // 刻印の文字が通る帯の中だけを測る（枠の隅の床や反射に反応しにくい）
     for (let y = 1; y < H - 1; y++) for (let x = 1; x < W - 1; x++) {
       const i = y * W + x;
+      if (!band[i]) continue;
       if (a[i] > 235) glare++;
       const s9 = a[i - W - 1] + a[i - W] + a[i - W + 1] + a[i - 1] + a[i] + a[i + 1] + a[i + W - 1] + a[i + W] + a[i + W + 1];
       const e = Math.abs(9 * a[i] - s9);
@@ -324,6 +413,7 @@
     for (let k = 0; k < 48; k++) { const x = Math.floor((k % 8) * W / 8), y = Math.floor(Math.floor(k / 8) * H / 6); sm[k] = a[y * W + x]; }
     // cx: 模様の左右の重心（0〜1）。0.5 に近いほど刻印が枠の真ん中
     // glare: 真っ白に飛んだ（光った反射）画素の割合
+    if (!n) return { tex: 0, sm: sm, cx: 0.5, glare: 0 };
     return { tex: t / n / 9, sm: sm, cx: t ? tx / t / (W - 1) : 0.5, glare: glare / n };
   }
   function riseK() { return Math.max(1.05, 1.5 - cfg.sens * 0.05); }   // 感度5 → ふだんの1.25倍で「入った」
@@ -537,7 +627,9 @@
     if (cfg.zoom !== null) $('vZoom').textContent = Number(cfg.zoom).toFixed(1) + ' 倍';
     layoutZone();
     $('stillBox').classList.toggle('hidden', cfg.mode !== 'stop');
-    $('zone').querySelector('.lbl').textContent = cfg.mode === 'flow' ? '刻印の枠' : '検知範囲';
+    $('zone').querySelector('.lbl').textContent = cfg.mode === 'flow' ? '刻印の型: ' + cfg.kind : '検知範囲';
+    $('sKind').value = cfg.kind;
+    drawTemplate();
     if (!S.running) $('btnRun').textContent = runLabel();
     $('sBurst').value = cfg.burst; $('vBurst').textContent = cfg.burst + ' 枚';
     $('sStill').value = cfg.stillMs; $('vStill').textContent = (cfg.stillMs / 1000).toFixed(1) + ' 秒';
@@ -555,6 +647,19 @@
   Array.prototype.forEach.call(document.querySelectorAll('input[name=cropMode]'), function(r) {
     r.onchange = function() { cfg.cropMode = this.value; store.set('cropMode', cfg.cropMode); showCfg(); };
   });
+  // 容器の種類: 型を描き直し、枠を型の縦横に合わせる（幅と中心はそのまま）
+  Object.keys(KINDS).forEach(function(k) { const o = document.createElement('option'); o.value = k; o.textContent = k; $('sKind').appendChild(o); });
+  $('sKind').onchange = function() {
+    cfg.kind = this.value; store.set('kind', cfg.kind);
+    fitZoneToTemplate();
+    S.hist = []; S.pass = null; S.learnUntil = Date.now() + 1000; showCfg();
+  };
+  function fitZoneToTemplate() {
+    const v = $('video'), vw = v.videoWidth || 16, vh = v.videoHeight || 9, z = cfg.zone;
+    const h = Math.min(0.9, z.w * vw * VB.h / VB.w / vh), cy = z.y + z.h / 2;
+    z.h = h; z.y = clamp(cy - h / 2, 0, 1 - h);
+    store.set('zone', z); layoutZone();
+  }
   $('btnCropReset').onclick = function() { cfg.crop = null; store.set('crop', null); showCfg(); };
   $('sZoom').oninput = function() { cfg.zoom = Number(this.value); store.set('zoom', cfg.zoom); applyTrack(); showCfg(); };
   $('cTorch').onchange = function() { cfg.torch = this.checked; store.set('torch', cfg.torch); applyTrack(); };

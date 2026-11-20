@@ -85,8 +85,8 @@ function check(name, ok, detail) {
   }
   if (downloads.length) {
     const sz = jpegSize(fs.readFileSync(await downloads[0].path()));
-    // 映像 640×360・刻印の枠 (0.25,0.25,0.5,0.5) → 保存する範囲は 左右に35%（x 0.075〜0.925）・上に1.2倍・下に0.4倍（y 0〜0.95） → 544×342
-    check('保存する範囲（刻印のまわり）だけを縮めずに保存', sz && sz.w === 544 && sz.h === 342, JSON.stringify(sz));
+    // 映像 640×360・枠 (0.25,0.34,0.5,0.29) → 保存する範囲は 左右に35%（x 0.075〜0.925）・上に1.2倍・下に0.4倍（y 0〜0.746） → 544×269
+    check('保存する範囲（刻印のまわり）だけを縮めずに保存', sz && sz.w === 544 && sz.h === 269, JSON.stringify(sz));
   }
   await page.click('#btnShot'); await page.waitForTimeout(500);
   check('「手動で撮る」でも撮れる', (await shots()) === 1);
@@ -114,7 +114,10 @@ function check(name, ok, detail) {
   await fp.goto('file://' + path.join(__dirname, '..', 'docs', 'camera', 'index.html'));
   await fp.waitForTimeout(800);
   const fshots = () => fp.evaluate(() => window.__aikc.shots.length);
-  check('流れる: 既定は「流れる」で、枠の名前は「刻印の枠」', (await fp.textContent('#zone .lbl')) === '刻印の枠' && (await fp.textContent('#btnRun')).includes('刻印がない'));
+  check('流れる: 既定は「流れる」で、枠は「刻印の型: 50kg」', (await fp.textContent('#zone .lbl')) === '刻印の型: 50kg' && (await fp.textContent('#btnRun')).includes('刻印がない'), await fp.textContent('#zone .lbl'));
+  const tmpl = await fp.$$eval('#tmpl textPath', els => els.map(e => e.textContent));
+  check('流れる: 枠の中に刻印配置図の並び（50kg: ※◇／LPガス V 117.5 TP3.0M／HEA 00001 W 34.9 12-26）を弧で描く',
+    tmpl.length === 3 && tmpl[1] === 'LPガス  V 117.5  TP3.0M' && tmpl[2] === 'HEA 00001  W 34.9  12-26' && (await fp.$$('#tmpl .band')).length === 3, JSON.stringify(tmpl));
   await fp.click('#btnRun'); await fp.waitForTimeout(1500);
   check('流れる: 開始すると、ふだんの様子を覚えてから見張る', (await fp.textContent('#state')).includes('見張り中'), await fp.textContent('#state'));
   // 刻印が左の外から右の外へ 約1.3秒で流れる（止まらない）
@@ -128,6 +131,13 @@ function check(name, ok, detail) {
   check('流れる: 刻印がないあいだは撮らない', (await fshots()) === 2);
   await pass(); await pass();
   check('流れる: 続けて流れてきた2本もそれぞれ撮る（合計3本・6枚）', (await fshots()) === 6 && await fp.evaluate(() => window.__aikc.passes) === 3, await fshots());
+  // 容器の種類を20kg（特殊配置）に変えると型が変わり、枠が型の縦横に合う
+  await fp.click('#btnSet'); await fp.selectOption('#sKind', '20kg'); await fp.waitForTimeout(200);
+  const t20 = await fp.$$eval('#tmpl textPath', els => els.map(e => e.textContent));
+  const zr = await fp.evaluate(() => { const r = document.getElementById('zone').getBoundingClientRect(); return r.width / r.height; });
+  check('流れる: 20kg を選ぶと扇形の型（HXC LPガス ◇ V 47／W 16.9／00001 12-17 TP3.0M）になり、枠が型の縦横（約3.1:1）に合う',
+    t20.length === 3 && t20[0].startsWith('HXC') && t20[2].includes('12-17') && Math.abs(zr - 740 / 240) < 0.2 && (await fp.textContent('#zone .lbl')) === '刻印の型: 20kg', JSON.stringify(t20) + ' ' + zr);
+  await fp.selectOption('#sKind', '50kg'); await fp.click('#btnSetClose');
   check('流れる: 本数と枚数を出す', (await fp.textContent('#count')) === '3 本・6 枚', await fp.textContent('#count'));
   await fp.close();
 
