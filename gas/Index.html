@@ -1,0 +1,2172 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root {
+    --navy: #1f2a5c; --navy2: #2d3a78; --bg: #f3f6fb; --card: #fff; --line: #d8e0ee;
+    --text: #1b2240; --muted: #6b7591; --ok: #1e7a4c; --okbg: #e3f4ea; --ng: #b94a3d; --ngbg: #fbe6e3;
+    --warn: #9a6a00; --warnbg: #fff4d6; --pend: #e8eefc;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif; }
+  button { font: inherit; cursor: pointer; }
+  header { background: var(--navy); color: #fff; padding: 10px 16px; display: flex; align-items: center; gap: 12px; }
+  header h1 { font-size: 18px; margin: 0; flex: 1; }
+  header .user { font-size: 12px; opacity: .7; }
+  header button { background: var(--navy2); color: #fff; border: 1px solid #56619a; border-radius: 8px; padding: 6px 12px; }
+  .hidden { display: none !important; }
+  main { padding: 16px; max-width: 1400px; margin: 0 auto; }
+
+  /* ホーム */
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  #doneLots { max-height: 70vh; overflow-y: auto; }
+  /* 入力中のロット一覧は枠の中でスクロール */
+  .kinds { display: flex; gap: 6px; flex-wrap: nowrap; overflow-x: auto; margin: 0 0 10px; padding-bottom: 4px; }
+  .kinds button { flex: 0 0 auto; border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 16px;
+    font-size: 15px; color: var(--navy); white-space: nowrap; }
+  .kinds button.on { background: var(--navy); color: #fff; border-color: var(--navy); }
+  .kinds button.zero { color: #a3abc0; }
+  .kind-head { grid-column: 1 / -1; font-size: 14px; font-weight: 700; color: var(--navy); margin: 6px 0 -4px;
+    border-left: 4px solid var(--navy); padding-left: 8px; }
+  .tabs .kind-label { grid-row: span 2; align-self: center; writing-mode: vertical-rl; letter-spacing: .05em; font-size: 12px; font-weight: 700; color: var(--muted); padding: 0 2px 0 6px; }
+  .cards.scroll { max-height: 46vh; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 2px 4px 2px 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .card h3 { margin: 0 0 4px; font-size: 18px; }
+  .card .sub { color: var(--muted); font-size: 13px; }
+  .lock-note { color: #b25e00; font-weight: 700; font-size: 14px; }
+  .ln-lock { margin-right: 4px; font-size: .8em; }
+  .bulk-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 6px; margin-top: 10px; max-height: 420px; overflow-y: auto; }
+  .bulk-list label { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; font-size: 15px; background: var(--card); }
+  .bulk-list input { width: 22px; height: 22px; flex: none; }
+  .bulk-list .bk-sent { margin-left: auto; font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .bulk-opt { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+  .bulk-opt input { width: 22px; height: 22px; }
+  .bulk-list .bk-kind { grid-column: 1 / -1; font-size: 13px; font-weight: 700; color: var(--navy); margin-top: 4px; }
+  .bar { height: 8px; background: #e6ebf5; border-radius: 4px; margin: 10px 0 6px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--navy); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .btn { border: 0; border-radius: 10px; padding: 10px 16px; background: var(--navy); color: #fff; font-weight: 600; }
+  .btn.sec { background: #e6ebf5; color: var(--navy); }
+  .btn.big { font-size: 20px; padding: 16px 28px; }
+  .btn:disabled { opacity: .5; }
+  h2 { font-size: 16px; color: var(--muted); margin: 24px 0 10px; letter-spacing: .05em; }
+  form.lot { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; align-items: end; }
+  label { font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+  input, select { width: 100%; font-size: 18px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcff; }
+  .msg { margin-top: 10px; font-size: 14px; }
+  .msg.err { color: var(--ng); }
+
+  /* 入力画面 */
+  .input-layout { display: grid; grid-template-columns: minmax(340px, 420px) 1fr; gap: 16px; }
+  /* タブレット縦向き（幅700〜1000px）: 左に入力・右に一覧の2列のまま、少し詰めて表示 */
+  @media (max-width: 1000px) {
+    main { padding: 10px; }
+    .input-layout { grid-template-columns: 300px 1fr; gap: 10px; }
+    .input-layout .panel { padding: 10px; }
+    .input-layout .field .val { font-size: 36px; min-height: 46px; }
+    .input-layout .steps button b { font-size: 22px; }
+    .input-layout .cands button { font-size: 18px; padding: 10px 0; }
+    .input-layout .pad button { font-size: 22px; padding: 10px 0; }
+    .input-layout .pad button.fn { font-size: 13px; }
+    .input-layout .keys:not(.opt) { display: none; }
+    .input-layout .grid { gap: 3px 6px; }
+    .input-layout .grid .cell { font-size: 14px; padding: 9px 6px; }
+    .input-layout .tabs button { padding: 7px 10px; font-size: 13px; }
+  }
+  /* スマホなど幅が狭いときだけ1列（一覧を上に） */
+  @media (max-width: 700px) {
+    .input-layout { grid-template-columns: 1fr; }
+    .input-layout > .panel:last-child { order: -1; }
+    /* スマホ: 見出しを1行に詰め、番号の表は枠の中でスクロール（入力欄とテンキーを下まで探さなくていいように） */
+    header { flex-wrap: wrap; padding: 8px 12px; gap: 4px 10px; }
+    header h1 { font-size: 16px; flex: 1 1 auto; }
+    header h1 span, header #user { display: none; }
+    main { padding: 8px; }
+    .input-layout .grid { max-height: 22vh; overflow-y: auto; position: relative; }
+    .input-layout .grid .cell { padding: 7px 6px; }
+    .input-layout .field { padding: 6px 10px; margin-bottom: 6px; }
+    .input-layout .match button, .input-layout .notice { padding-top: 8px; padding-bottom: 8px; }
+    .input-layout .field .val { font-size: 30px; min-height: 40px; }
+    .input-layout .pad button { font-size: 20px; padding: 8px 0; }
+  }
+  /* タブレット縦向き: 上に表、下に入力（入力は 番号・質量 | 前回±・候補 | テンキー の3列） */
+  @media (orientation: portrait) and (min-width: 701px) {
+    .input-layout { grid-template-columns: 1fr; gap: 8px; }
+    .input-layout > .panel:last-child { order: -1; }
+    .input-layout #inPanel { display: grid; grid-template-columns: 1fr 1.25fr; column-gap: 10px; align-items: start;
+      grid-template-areas: "num pad" "match pad" "actual pad" "notice pad" "dupc pad" "queue pad"; }
+    #dupChoice { grid-area: dupc; } #candsNote { display: none; }
+    /* 入力バー: 下の入力欄のすぐ上にせり上がって出る */
+    #massSheet { display: block; position: fixed; left: 8px; right: 8px; bottom: var(--sheetBottom, 340px); z-index: 20;
+      background: #fff; border: 2px solid var(--navy); border-radius: 14px; box-shadow: 0 -10px 28px rgba(20, 26, 60, .28);
+      padding: 10px 12px; transform: translateY(24px); opacity: 0; pointer-events: none; transition: transform .15s, opacity .15s;
+      display: grid; grid-template-columns: 1fr 1.7fr; column-gap: 10px; grid-template-areas: "title title" "dok dok" "mass steps" "cands cands" "extra extra"; }
+    #massSheet #btnDateOk { grid-area: dok; }
+    #massSheet.open { transform: none; opacity: 1; pointer-events: auto; }
+    #massSheet .sheet-head { grid-area: title; }
+    #massSheet #fldMass { grid-area: mass; margin-bottom: 8px; }
+    #massSheet #steps { grid-area: steps; margin-bottom: 8px; }
+    #massSheet #cands { grid-area: cands; grid-template-columns: repeat(10, 1fr); margin-bottom: 8px; }
+    #massSheet #extraRow { grid-area: extra; margin-bottom: 0; }
+    #fldNum { grid-area: num; } #matchRow { grid-area: match; } #fldActual { grid-area: actual; }
+    #notice { grid-area: notice; } #pad { grid-area: pad; } #queue { grid-area: queue; }
+    .input-layout .field { margin-bottom: 6px; padding: 4px 10px; }
+    .input-layout .field .val { font-size: 30px; min-height: 38px; }
+    .input-layout .field .val .cursor { height: 30px; }
+    .input-layout .match { margin-bottom: 6px; } .input-layout .match button { padding: 6px; font-size: 15px; }
+    .input-layout .notice { font-size: 14px; min-height: 40px; margin-bottom: 6px; }
+    .input-layout .cands { grid-template-columns: repeat(5, 1fr); gap: 5px; }
+    .input-layout .cands button { font-size: 16px; padding: 12px 0; }
+    .input-layout .pad button { padding: 9px 0; }
+    .input-layout #opts .keys.opt { font-size: 11px; }
+    /* 上の表は大きめに */
+    .input-layout .grid .cell { padding: 2px 8px; font-size: 16px; line-height: 1.25; }
+    .input-layout .grid .cell .m { font-size: 18px; }
+    .input-layout .grid { gap: 3px 6px; }
+    .input-layout .gridhead { margin-bottom: 6px; }
+    .input-layout .tabs { margin-bottom: 6px; }
+    .input-layout .tabs button { padding: 5px 10px; }
+    /* そのぶん下の入力を詰める（設定のチェックは横向きのときに表示） */
+    .input-layout #opts { display: none; }
+    .input-layout .steps { margin-bottom: 6px; }
+    .input-layout .steps button { padding: 4px 0; }
+    .input-layout .steps button b { font-size: 20px; }
+    .input-layout .field .val { font-size: 26px; min-height: 32px; }
+    .input-layout .field .val .cursor { height: 26px; }
+    .input-layout .pad { gap: 6px; }
+    .input-layout .pad button { padding: 7px 0; }
+    .input-layout .notice { min-height: 34px; padding: 6px 10px; }
+    .input-layout .cands button { padding: 9px 0; }
+    .input-layout .panel { padding: 8px; }
+    header { padding: 6px 16px; }
+    .input-layout .notice.dup { font-size: 17px; }
+  }
+  /* ダブり（入力済みの番号をもう一度入れた）の表示 */
+  .notice.dup { background: var(--ng); color: #fff; font-size: 20px; animation: dupflash .45s ease-in-out 4; }
+  @keyframes dupflash { 50% { opacity: .35; } }
+  .cell.dup { border-color: var(--ng); box-shadow: 0 0 0 2px var(--ng) inset; }
+  .cell .badge.fix { background: #c77700; }
+  .cell .badge.seal { background: #7a5bc4; }
+  .dupchoice { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+  .dupchoice button { border: 0; border-radius: 10px; padding: 12px 6px; font-size: 16px; font-weight: 700; color: #fff; line-height: 1.2; }
+  .dupchoice button span { display: block; font-size: 11px; font-weight: 400; opacity: .85; }
+  .dupchoice .fix { background: #c77700; } .dupchoice .del { background: #fff; color: var(--ng); border: 2px solid var(--ng); } .dupchoice .dup { background: var(--ng); }
+  #massSheet { display: none; }
+  #massSheet.open { display: block; }
+  .stale { background: #fff6d6; color: #7a5a00; font-size: 13px; text-align: center; padding: 4px 8px; }
+  .sheet-head { display: flex; align-items: flex-start; gap: 8px; }
+  .sheet-head .sheet-title { flex: 1; }
+  .sheet-title .st-num { font-size: 30px; font-weight: 800; letter-spacing: .03em; font-variant-numeric: tabular-nums; }
+  .sheet-title .st-pre { font-size: 18px; font-weight: 700; margin-right: 3px; opacity: .75; }
+  .sheet-title .st-last { font-size: 38px; }
+  .sheet-title .st-w { margin-left: 10px; font-size: 16px; font-weight: 700; }
+  .sheet-close { flex: none; width: 40px; height: 40px; margin: -4px -4px 4px 0; border: 0; border-radius: 50%; background: #e8eaf2; color: var(--navy); font-size: 24px; font-weight: 700; line-height: 1; }
+  .sheet-title { font-size: 15px; font-weight: 700; color: var(--navy); margin-bottom: 6px; }
+  .cell.repair { background: #fff1dc; color: #9a5a00; }
+  .dateok { display: block; width: 100%; margin: 0 0 8px; border: 0; border-radius: 12px; padding: 12px 8px; background: #c77700; color: #fff; font-size: 20px; font-weight: 800; letter-spacing: .05em; }
+  .dateok small { display: block; font-size: 12px; font-weight: 400; letter-spacing: 0; opacity: .9; }
+  .dateok.done { background: var(--okbg); color: var(--ok); border: 2px solid var(--ok); padding: 6px 8px; font-size: 16px; }
+  .dateok.done small { display: none; }
+  #massSheet.locked #fldMass, #massSheet.locked #steps, #massSheet.locked #cands { opacity: .35; pointer-events: none; }
+  .extra-row { display: flex; gap: 8px; margin-bottom: 10px; }
+  .extra-row > button { flex: 1 1 0; min-width: 0; }
+  .dupbtn { border: 2px solid var(--ng); background: #fff; color: var(--ng); border-radius: 10px; padding: 8px; font-size: 15px; font-weight: 700; }
+  .dupbtn:disabled { border-color: #d5d9e4; color: #a3abc0; }
+  .undobtn { display: block; width: 100%; margin: -4px 0 10px; border: 2px solid #8a93ad; background: #fff; color: var(--navy); border-radius: 10px; padding: 10px 8px; font-size: 15px; font-weight: 700; text-align: left; }
+  .undobtn.armed { border-color: var(--ng); background: var(--ngbg); color: var(--ng); }
+  .undobtn small { font-weight: 400; margin-left: 6px; }
+  .clearbtn { border: 2px solid var(--ng); background: #fff; color: var(--ng); border-radius: 10px; padding: 8px; font-size: 15px; font-weight: 700; }
+  .repairbtn { border: 2px solid #c77700; background: #fff; color: #9a5a00; border-radius: 10px; padding: 8px; font-size: 15px; font-weight: 700; }
+  .sealbtn { width: 100%; border: 2px dashed #7a5bc4; background: #fff; color: #7a5bc4; border-radius: 10px; padding: 8px; font-size: 15px; font-weight: 700; }
+  .sealbtn.on { background: #7a5bc4; color: #fff; border-style: solid; }
+  .cell .badge { display: inline-block; margin-left: 3px; padding: 0 3px; border-radius: 3px; background: var(--ng); color: #fff; font-size: 10px; font-weight: 700; vertical-align: 1px; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .field { border: 2px solid var(--line); border-radius: 12px; padding: 8px 14px; margin-bottom: 10px; background: #fbfcff; }
+  .field.active { border-color: var(--navy); background: var(--pend); }
+  .field .lbl { font-size: 13px; color: var(--muted); display: flex; justify-content: space-between; }
+  .field .val { font-size: 44px; font-weight: 700; min-height: 56px; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+  .field .val .cursor { display: inline-block; width: 3px; height: 40px; background: var(--navy); vertical-align: -4px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .resolved { font-size: 15px; color: var(--navy); font-weight: 600; min-height: 20px; }
+  .match { display: flex; gap: 8px; margin-bottom: 10px; }
+  .match button { flex: 1; border-radius: 10px; padding: 10px; border: 1px solid var(--line); background: #f0f3fa; color: var(--muted); font-size: 18px; }
+  .match button.on.ok { background: var(--navy); color: #fff; }
+  .match button.on.ng { background: var(--ng); color: #fff; }
+  .notice { border-radius: 10px; padding: 10px 12px; font-size: 16px; font-weight: 600; min-height: 46px; margin-bottom: 10px; }
+  .notice.info { background: var(--pend); color: var(--navy); }
+  .notice.ok { background: var(--okbg); color: var(--ok); }
+  .notice.warn { background: var(--warnbg); color: var(--warn); }
+  .notice.err { background: var(--ngbg); color: var(--ng); }
+  .steps { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-bottom: 10px; }
+  .steps button { border: 2px solid var(--navy2); background: #fff; border-radius: 12px; padding: 8px 0; color: var(--navy);
+    font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .steps button b { display: block; font-size: 26px; }
+  .steps button span { font-size: 12px; color: var(--muted); }
+  .steps button.same { background: var(--navy); color: #fff; }
+  .steps button.same span { color: #cfd6ef; }
+  .steps button:active { transform: scale(.96); }
+  small.w { font-size: .6em; font-weight: 700; opacity: .6; margin-right: 1px; }
+  .cands { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 10px; }
+  .cands button { border: 2px solid var(--line); background: #fff; border-radius: 10px; font-size: 22px; font-weight: 700;
+    padding: 12px 0; color: var(--text); font-variant-numeric: tabular-nums; }
+  .cands button.freq1 { background: var(--navy); border-color: var(--navy); color: #fff; }
+  .cands button.freq2 { background: #dfe6f7; border-color: var(--navy2); color: var(--navy); }
+  .cands button:active { transform: scale(.96); }
+  .cands-note { font-size: 12px; color: var(--muted); margin: -4px 0 8px; }
+  .pad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .pad button { border: 1px solid var(--line); background: #fff; border-radius: 10px; font-size: 26px; padding: 12px 0; color: var(--text); }
+  .pad button.fn { font-size: 14px; background: #eef2fa; color: var(--navy); font-weight: 600; }
+  .pad button.enter { grid-row: span 2; background: var(--navy); color: #fff; font-size: 20px; }
+  .pad button:active { transform: scale(.97); }
+  .keys { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.7; }
+  .keys b { display: inline-block; min-width: 22px; text-align: center; border: 1px solid var(--line); border-radius: 4px; background: #fff; margin-right: 2px; }
+
+  /* ロットのタブは2段で、多いときは横スクロール */
+  .input-layout > .panel { min-width: 0; }
+  .tabs { position: relative; display: grid; grid-template-rows: auto auto; grid-auto-flow: column; grid-auto-columns: max-content;
+    gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; margin-bottom: 10px; padding-bottom: 6px; }
+  .tabs button { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 14px;
+    font-size: 14px; color: var(--navy); white-space: nowrap; }
+  .tabs button.done { border-color: var(--ok); color: var(--ok); }
+  .tabs button.on { background: var(--navy); color: #fff; }
+  .ln-pre { font-size: .72em; font-weight: 600; opacity: .75; margin-right: 2px; letter-spacing: .02em; }
+  .ln-grp { font-size: 1.3em; font-weight: 800; letter-spacing: .02em; }
+  .ln-tail { font-weight: 600; opacity: .8; }
+  .ln-cnt { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; background: rgba(120,130,160,.15); font-size: .8em; font-weight: 600; vertical-align: 2px; }
+  .tabs button.on .ln-cnt { background: rgba(255,255,255,.22); }
+  .ln-soko { display: inline-block; margin-right: 4px; padding: 0 5px; border-radius: 4px; background: #333; color: #fff; font-size: .72em; font-weight: 700; vertical-align: 2px; }
+  #gridTitle { font-size: 22px; color: var(--navy); }
+  #gridTitle .ln-grp { font-size: 1.45em; }
+  .ln-range { margin-left: 8px; font-size: .75em; font-weight: 600; color: var(--muted); }
+  #gridTitle .ln-range { margin-left: 10px; font-size: .68em; font-weight: 600; color: var(--muted); }
+  .gridhead { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .gridhead .count { font-size: 22px; font-weight: 700; white-space: nowrap; display: flex; align-items: center; flex: none; }
+  .gridhead > div:first-child { min-width: 0; }
+  .lotnav { border: 0; background: #e8eaf2; color: var(--navy); border-radius: 50%; width: 34px; height: 34px; font-size: 22px; font-weight: 700; line-height: 1; margin: 0 6px; vertical-align: middle; }
+  .lotnav:disabled { opacity: .3; }
+  #grid { touch-action: pan-y; }
+  #grid.slide-l { animation: slideL .18s ease-out; } #grid.slide-r { animation: slideR .18s ease-out; }
+  @keyframes slideL { from { transform: translateX(40px); opacity: .3; } to { transform: none; opacity: 1; } }
+  @keyframes slideR { from { transform: translateX(-40px); opacity: .3; } to { transform: none; opacity: 1; } }
+  .grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px 10px; grid-auto-flow: column; grid-template-rows: repeat(20, auto); }
+  .cell { display: flex; justify-content: space-between; border-radius: 6px; padding: 5px 8px; font-size: 15px; cursor: pointer; user-select: none;
+    background: #f5f7fb; color: #7d86a0; font-weight: 600; font-variant-numeric: tabular-nums; border: 1px solid transparent; }
+  .cell .m { font-weight: 700; }
+  .cell > span:first-child { font-size: 1.25em; letter-spacing: .03em; color: #5d6683; }
+  .cell.filled > span:first-child { font-weight: 700; color: var(--navy); }
+  .cell.filled { background: var(--okbg); color: var(--text); }
+  .cell.missing { background: #eee; color: var(--muted); }
+  .cell.pending { background: var(--pend); color: var(--navy); }
+  .cell.error { background: var(--ngbg); color: var(--ng); }
+  .cell.target { border-color: var(--navy); box-shadow: 0 0 0 2px var(--navy) inset; }
+  .cell.last { border-color: var(--ok); }
+  .queue { font-size: 13px; color: var(--muted); }
+  .queue.err { color: var(--ng); font-weight: 600; }
+
+  dialog { border: 0; border-radius: 14px; padding: 20px; width: min(560px, 94vw); }
+  dialog::backdrop { background: rgba(20, 26, 60, .45); }
+  dialog h3 { margin-top: 0; }
+  dialog .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .missing-list { font-size: 13px; color: var(--ng); margin: 8px 0; max-height: 80px; overflow: auto; }
+  /* 開いたときのローディング画面（ラインを流れるLPGボンベ） */
+  #splash { position: fixed; inset: 0; z-index: 9999; background: #1f2a5c; color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; pointer-events: none; transition: opacity .35s; }
+  #splash.out { opacity: 0; }
+  #splash .sp-title { font-size: 22px; font-weight: 700; letter-spacing: .08em; margin-bottom: 18px; }
+  #splash .sp-sub { font-size: 14px; opacity: .75; margin-top: 14px; }
+  #splash svg { width: min(92vw, 520px); height: auto; overflow: hidden; }
+  #splash .sp-cyls { animation: spMove 5.6s linear infinite; }
+  #splash .sp-belt { animation: spBelt 1.4s linear infinite; }
+  #splash .sp-roll { animation: spRoll 0.7s linear infinite; transform-box: fill-box; transform-origin: center; }
+  @keyframes spMove { from { transform: translateX(-400px); } to { transform: translateX(0); } }
+  @keyframes spBelt { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+  @keyframes spRoll { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div id="splash"><div class="sp-title">LPG容器 質量入力</div>
+<svg viewBox="0 0 600 220" aria-hidden="true"><defs><linearGradient id="spBody" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#7c828b"/><stop offset=".16" stop-color="#bfc4cb"/><stop offset=".34" stop-color="#eceef1"/><stop offset=".55" stop-color="#c6cad0"/><stop offset=".85" stop-color="#9aa0a8"/><stop offset="1" stop-color="#737981"/></linearGradient><linearGradient id="spFoot" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#6f757e"/><stop offset=".35" stop-color="#d4d8dd"/><stop offset=".7" stop-color="#a9aeb6"/><stop offset="1" stop-color="#6d737b"/></linearGradient><linearGradient id="spBrass" x1="0" x2="1" y1="0" y2="0"><stop offset="0" stop-color="#8a6512"/><stop offset=".4" stop-color="#f1cf6a"/><stop offset="1" stop-color="#9b7418"/></linearGradient></defs><g class="sp-cyls"><g transform="translate(-350,0)"><rect x="-25.0" y="172" width="50.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 72 h34 v34 h-34z M-11 78 h18 v18 h-18z"/><rect x="-17" y="72" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="83" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="80" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-28.0" y="98" width="56" height="76" rx="25.8" ry="19.0" fill="url(#spBody)"/><path d="M-27.0 118.2 Q0 122.2 27.0 118.2" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-28.0" y1="165" x2="28.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="134.9" font-size="11.2"><tspan font-size="7.3">燃</tspan>LPガス</text><text x="1" y="145.0" font-size="5.6">充てん期限 2024･4</text></g></g><g transform="translate(-250,0)"><rect x="-23.0" y="172" width="46.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 64 h34 v34 h-34z M-11 70 h18 v18 h-18z"/><rect x="-17" y="64" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="75" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="72" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-26.0" y="90" width="52" height="84" rx="23.9" ry="17.7" fill="url(#spBody)"/><path d="M-25.0 108.7 Q0 112.7 25.0 108.7" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-26.0" y1="165" x2="26.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="128.3" font-size="10.4"><tspan font-size="6.8">燃</tspan>LPガス</text><text x="1" y="137.7" font-size="5.2">充てん期限 2024･4</text></g></g><g transform="translate(-150,0)"><rect x="-21.0" y="172" width="42.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-24.0" y="66" width="48" height="108" rx="22.1" ry="16.3" fill="url(#spBody)"/><path d="M-23.0 83.3 Q0 87.3 23.0 83.3" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-24.0" y1="165" x2="24.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="110.5" font-size="9.6"><tspan font-size="6.2">燃</tspan>LPガス</text><text x="1" y="119.1" font-size="4.8">充てん期限 2024･4</text></g><rect x="-5" y="59" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="50" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="54" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="46" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="43" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g><g transform="translate(-50,0)"><rect x="-24.0" y="172" width="48.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-27.0" y="36" width="54" height="138" rx="24.8" ry="18.4" fill="url(#spBody)"/><path d="M-26.0 55.4 Q0 59.4 26.0 55.4" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-27.0" y1="165" x2="27.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="91.0" font-size="10.8"><tspan font-size="7.0">燃</tspan>LPガス</text><text x="1" y="100.7" font-size="5.4">充てん期限 2024･4</text></g><rect x="-5" y="29" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="20" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="24" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="16" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="13" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g><g transform="translate(50,0)"><rect x="-25.0" y="172" width="50.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 72 h34 v34 h-34z M-11 78 h18 v18 h-18z"/><rect x="-17" y="72" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="83" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="80" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-28.0" y="98" width="56" height="76" rx="25.8" ry="19.0" fill="url(#spBody)"/><path d="M-27.0 118.2 Q0 122.2 27.0 118.2" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-28.0" y1="165" x2="28.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="134.9" font-size="11.2"><tspan font-size="7.3">燃</tspan>LPガス</text><text x="1" y="145.0" font-size="5.6">充てん期限 2024･4</text></g></g><g transform="translate(150,0)"><rect x="-23.0" y="172" width="46.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 64 h34 v34 h-34z M-11 70 h18 v18 h-18z"/><rect x="-17" y="64" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="75" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="72" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-26.0" y="90" width="52" height="84" rx="23.9" ry="17.7" fill="url(#spBody)"/><path d="M-25.0 108.7 Q0 112.7 25.0 108.7" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-26.0" y1="165" x2="26.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="128.3" font-size="10.4"><tspan font-size="6.8">燃</tspan>LPガス</text><text x="1" y="137.7" font-size="5.2">充てん期限 2024･4</text></g></g><g transform="translate(250,0)"><rect x="-21.0" y="172" width="42.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-24.0" y="66" width="48" height="108" rx="22.1" ry="16.3" fill="url(#spBody)"/><path d="M-23.0 83.3 Q0 87.3 23.0 83.3" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-24.0" y1="165" x2="24.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="110.5" font-size="9.6"><tspan font-size="6.2">燃</tspan>LPガス</text><text x="1" y="119.1" font-size="4.8">充てん期限 2024･4</text></g><rect x="-5" y="59" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="50" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="54" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="46" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="43" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g><g transform="translate(350,0)"><rect x="-24.0" y="172" width="48.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-27.0" y="36" width="54" height="138" rx="24.8" ry="18.4" fill="url(#spBody)"/><path d="M-26.0 55.4 Q0 59.4 26.0 55.4" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-27.0" y1="165" x2="27.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="91.0" font-size="10.8"><tspan font-size="7.0">燃</tspan>LPガス</text><text x="1" y="100.7" font-size="5.4">充てん期限 2024･4</text></g><rect x="-5" y="29" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="20" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="24" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="16" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="13" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g><g transform="translate(450,0)"><rect x="-25.0" y="172" width="50.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 72 h34 v34 h-34z M-11 78 h18 v18 h-18z"/><rect x="-17" y="72" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="83" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="80" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-28.0" y="98" width="56" height="76" rx="25.8" ry="19.0" fill="url(#spBody)"/><path d="M-27.0 118.2 Q0 122.2 27.0 118.2" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-28.0" y1="165" x2="28.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="134.9" font-size="11.2"><tspan font-size="7.3">燃</tspan>LPガス</text><text x="1" y="145.0" font-size="5.6">充てん期限 2024･4</text></g></g><g transform="translate(550,0)"><rect x="-23.0" y="172" width="46.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 64 h34 v34 h-34z M-11 70 h18 v18 h-18z"/><rect x="-17" y="64" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="75" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="72" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-26.0" y="90" width="52" height="84" rx="23.9" ry="17.7" fill="url(#spBody)"/><path d="M-25.0 108.7 Q0 112.7 25.0 108.7" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-26.0" y1="165" x2="26.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="128.3" font-size="10.4"><tspan font-size="6.8">燃</tspan>LPガス</text><text x="1" y="137.7" font-size="5.2">充てん期限 2024･4</text></g></g><g transform="translate(650,0)"><rect x="-21.0" y="172" width="42.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-24.0" y="66" width="48" height="108" rx="22.1" ry="16.3" fill="url(#spBody)"/><path d="M-23.0 83.3 Q0 87.3 23.0 83.3" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-24.0" y1="165" x2="24.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="110.5" font-size="9.6"><tspan font-size="6.2">燃</tspan>LPガス</text><text x="1" y="119.1" font-size="4.8">充てん期限 2024･4</text></g><rect x="-5" y="59" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="50" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="54" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="46" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="43" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g><g transform="translate(750,0)"><rect x="-24.0" y="172" width="48.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.9" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-27.0" y="36" width="54" height="138" rx="24.8" ry="18.4" fill="url(#spBody)"/><path d="M-26.0 55.4 Q0 59.4 26.0 55.4" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-27.0" y1="165" x2="27.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="91.0" font-size="10.8"><tspan font-size="7.0">燃</tspan>LPガス</text><text x="1" y="100.7" font-size="5.4">充てん期限 2024･4</text></g><rect x="-5" y="29" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="20" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="24" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="16" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="13" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g><g transform="translate(850,0)"><rect x="-25.0" y="172" width="50.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="5.0" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="15.4" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 72 h34 v34 h-34z M-11 78 h18 v18 h-18z"/><rect x="-17" y="72" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="83" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="80" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-28.0" y="98" width="56" height="76" rx="25.8" ry="19.0" fill="url(#spBody)"/><path d="M-27.0 118.2 Q0 122.2 27.0 118.2" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-28.0" y1="165" x2="28.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="134.9" font-size="11.2"><tspan font-size="7.3">燃</tspan>LPガス</text><text x="1" y="145.0" font-size="5.6">充てん期限 2024･4</text></g></g><g transform="translate(950,0)"><rect x="-23.0" y="172" width="46.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.7" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="14.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><path fill-rule="evenodd" fill="url(#spBody)" d="M-17 64 h34 v34 h-34z M-11 70 h18 v18 h-18z"/><rect x="-17" y="64" width="34" height="3" fill="#8f959d" opacity=".6"/><rect x="-3.5" y="75" width="6" height="14" rx="1" fill="url(#spBrass)"/><rect x="-4.5" y="72" width="8" height="4" rx="1" fill="#2f8a45"/><rect x="-26.0" y="90" width="52" height="84" rx="23.9" ry="17.7" fill="url(#spBody)"/><path d="M-25.0 108.7 Q0 112.7 25.0 108.7" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-26.0" y1="165" x2="26.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="128.3" font-size="10.4"><tspan font-size="6.8">燃</tspan>LPガス</text><text x="1" y="137.7" font-size="5.2">充てん期限 2024･4</text></g></g><g transform="translate(1050,0)"><rect x="-21.0" y="172" width="42.0" height="14" rx="2" fill="url(#spFoot)"/><ellipse cx="-13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="-4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="4.3" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><ellipse cx="13.2" cy="180" rx="2.2" ry="2.6" fill="#2e333b"/><rect x="-24.0" y="66" width="48" height="108" rx="22.1" ry="16.3" fill="url(#spBody)"/><path d="M-23.0 83.3 Q0 87.3 23.0 83.3" fill="none" stroke="#8f959d" stroke-width=".8" opacity=".7"/><line x1="-24.0" y1="165" x2="24.0" y2="165" stroke="#8f959d" stroke-width=".8" opacity=".7"/><g fill="#d22f27" font-weight="700" font-style="italic" text-anchor="middle"><text x="1" y="110.5" font-size="9.6"><tspan font-size="6.2">燃</tspan>LPガス</text><text x="1" y="119.1" font-size="4.8">充てん期限 2024･4</text></g><rect x="-5" y="59" width="10" height="9" fill="#a3a9b1"/><rect x="-4" y="50" width="8" height="10" rx="1" fill="url(#spBrass)"/><rect x="3" y="54" width="5" height="4" fill="url(#spBrass)"/><rect x="-1.5" y="46" width="3" height="4" fill="#1a1a1a"/><rect x="-10" y="43" width="20" height="4.5" rx="2" fill="#1a1a1a"/></g></g>
+<rect x="0" y="186" width="600" height="24" rx="4" fill="#38426b"/><circle class="sp-roll" cx="20" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="70" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="120" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="170" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="220" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="270" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="320" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="370" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="420" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="470" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="520" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/><circle class="sp-roll" cx="570" cy="198" r="7" fill="#5a6488" stroke="#c9cfe0" stroke-width="2" stroke-dasharray="4 4"/>
+<line class="sp-belt" x1="0" y1="187" x2="600" y2="187" stroke="#9aa3c0" stroke-width="2" stroke-dasharray="30 20"/></svg>
+<div class="sp-sub">読み込み中…</div></div>
+<script>window.SPLASH_T0 = Date.now();</script>
+<header>
+  <h1>LPG容器 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">v137（底黒を同じロットで別の日にも登録できる）</span></h1>
+  <span class="user" id="workerBadge"></span>
+  <span class="user" id="user"></span>
+  <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
+</header>
+<div id="staleMsg" class="stale hidden">前回の一覧を表示中・最新に更新しています…</div>
+
+<main id="home">
+  <h2>入力者（この端末で入力する人）</h2>
+  <div class="card">
+    <div class="row" style="align-items:flex-end">
+      <div style="flex:1;min-width:200px"><label>入力者</label><select id="fWorker"></select></div>
+      <div style="flex:1;min-width:160px"><label>端末名（例: iPad-1）</label><input id="fDevice" autocomplete="off"></div>
+    </div>
+    <div class="msg" id="workerMsg"></div>
+  </div>
+
+  <h2>入力中のロット</h2>
+  <div class="sub" id="activeCount" style="margin:-4px 0 8px;font-size:13px;color:var(--muted)"></div>
+  <div class="kinds" id="kindFilter"></div>
+  <div class="cards scroll" id="activeLots"></div>
+  <div class="row" style="margin-top:14px">
+    <button class="btn big" id="btnStart" disabled>入力を始める</button>
+  </div>
+
+  <h2>新しい組容器番号を登録（範囲を入れると100本ずつまとめて作成）</h2>
+  <div class="card">
+    <form class="lot" id="lotForm" onsubmit="return false">
+      <div><label>記号（例: HRH）</label><input id="fPrefix" autocomplete="off" autocapitalize="characters"></div>
+      <div><label>組容器番号 開始</label><input id="fStart" inputmode="numeric" autocomplete="off" placeholder="52001"></div>
+      <div><label>組容器番号 終了（まとめて作るとき）</label><input id="fEnd" inputmode="numeric" autocomplete="off" placeholder="空欄なら100本"></div>
+      <div><label>容器区分</label>
+        <select id="fKind">
+          <option>5kg</option><option>8kg</option><option>10kg</option><option>20kg</option><option>20kg三部制</option>
+          <option>30kg</option><option>30kg把手</option><option selected>50kg</option><option>50kg S付</option><option>その他</option>
+        </select>
+      </div>
+      <div><label>仕様</label>
+        <select id="fSpec">
+          <option value="">通常（質量を入力）</option><option value="底黒">底黒（再搬入・質量欄に〇）</option>
+        </select>
+      </div>
+      <div><button class="btn" id="btnCreate" type="button" style="width:100%;padding:12px">登録</button></div>
+    </form>
+    <div class="msg" id="lotMsg"></div>
+    <div class="row" style="margin-top:8px;gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn sec" id="btnDevlog" type="button">このiPadの入力の控え</button>
+      <span class="sub" id="devlogMsg"></span>
+    </div>
+    <div class="hidden" id="devlogBox" style="margin-top:8px">
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <button class="btn" id="btnDevlogResend" type="button">届いていない分を送り直す</button>
+        <button class="btn sec" id="btnDevlogCsv" type="button">CSVで保存</button>
+        <button class="btn sec" id="btnErrlogCsv" type="button">送信エラーの記録（CSV）</button>
+      </div>
+    </div>
+    <div class="hidden" id="recoverBox" style="margin-top:10px;padding:12px;border:2px solid var(--ng);border-radius:10px;background:#fff4f2">
+      <div id="recoverMsg" style="font-weight:700;color:var(--ng)"></div>
+      <div class="row" style="margin-top:8px"><button class="btn" id="btnRecoverSend" type="button">残っていた入力を送る</button><button class="btn sec" id="btnRecoverDrop" type="button">送らずに消す</button></div>
+    </div>
+  </div>
+
+  <h2>最近完了したロット <span class="sub" style="font-size:13px;font-weight:400">（送っていないもの）</span>
+    <label class="bulk-opt" style="font-size:14px;font-weight:400;margin-left:12px"><input type="checkbox" id="showSentDone">送ったもの（新しい10件）も表示</label></h2>
+  <div class="cards" id="doneLots"></div>
+
+  <h2>検査表をまとめてメール送信</h2>
+  <div class="panel">
+    <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+      <button class="btn sec" id="btnBulkLoad" type="button">完了したロットを表示</button>
+      <button class="btn sec hidden" id="btnBulkUnsent" type="button">未送信をすべて選ぶ</button>
+      <button class="btn sec hidden" id="btnBulkNone" type="button">選択を外す</button>
+    </div>
+    <div class="bulk-list" id="bulkList"></div>
+    <div class="row" style="margin-top:10px;gap:14px;align-items:center;flex-wrap:wrap">
+    </div>
+    <div class="bk-kind" style="margin-top:12px">付ける採番表の日（まだ送っていない日・新しい順）
+      <label class="bulk-opt" style="display:inline-flex;font-size:13px;font-weight:400;margin-left:10px"><input type="checkbox" id="showSentDays">送った日も表示</label></div>
+    <div class="bulk-list" id="bulkDays" style="max-height:220px"></div>
+    <div class="row" style="margin-top:10px;gap:14px;align-items:center;flex-wrap:wrap">
+      <button class="btn hidden" id="btnBulkSend" type="button">送信</button>
+    </div>
+    <div class="msg" id="bulkMsg">チェックした完了ロットの成績表PDFと、チェックした日の採番表PDFを1通のメールにまとめて送付先へ送ります（20ロットを超えると20ロットずつ分けて送り、採番表は1通目に付けます）。ロットを選ばずに日だけ選ぶと、採番表だけを送ります。今日の採番表はその時点までの分で作ります。</div>
+  </div>
+
+  <h2>採番表（その日に流れた順番）</h2>
+  <div class="panel">
+    <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <button class="btn big" id="btnDayEnd" type="button">本日生産終了（今日の採番表を作る）</button>
+    </div>
+    <div class="row" style="gap:8px;align-items:center;flex-wrap:wrap">
+      <input type="date" id="saibanDate" style="font-size:16px;padding:8px">
+      <button class="btn" id="btnSaiban" type="button">採番表を作る</button>
+    </div>
+    <div class="msg" id="saibanMsg">毎晩22時台に、その日の分を「LPG容器 採番表」スプレッドシートに書き足し、PDFも保存します（容器記号もまとめて1日1つの通し番号）。その日の作業が終わったら「本日生産終了」を押すと、すぐに今日の分を作ります（あとで入力が増えても22時台に作り直します）。日付を選んで作り直すこともできます。</div>
+  </div>
+</main>
+
+<main id="entry" class="hidden">
+  <div class="input-layout">
+    <div class="panel" id="inPanel">
+      <div class="field" id="fldNum">
+        <div class="lbl"><span>容器番号</span><span id="numHint">下3桁でOK（先頭の0は不要）</span></div>
+        <div class="val" id="valNum"></div>
+        <div class="resolved" id="resolved"></div>
+      </div>
+      <div class="match" id="matchRow">
+        <button id="btnOk" class="on ok" tabindex="-1">番号 OK</button>
+        <button id="btnNg" class="ng" tabindex="-1">NG（／キー）</button>
+      </div>
+      <div class="field hidden" id="fldActual">
+        <div class="lbl"><span>実容器番号（刻印の番号）</span></div>
+        <div class="val" id="valActual"></div>
+      </div>
+      <div class="notice info" id="notice">容器番号を入力</div>
+      <button class="undobtn hidden" id="btnUndo" tabindex="-1"></button>
+      <div class="dupchoice hidden" id="dupChoice">
+        <button class="fix" id="btnFix" tabindex="-1">訂正して上書き<span>入力ミスを直す（Enter・もう一度タップ）</span></button>
+        <button class="dup" id="btnDup" tabindex="-1">ダブりとして記録<span>2回流れてきた・前と同じWで（＋キー）</span></button>
+        <button class="del" id="btnDel" tabindex="-1">入力を消す<span>ミスを取り消して空に戻す</span></button>
+      </div>
+      <!-- 質量の入力バー: 容器番号が決まると出る -->
+      <div id="massSheet">
+        <div class="sheet-head"><div class="sheet-title" id="sheetTitle"></div><button type="button" class="sheet-close" id="btnSheetClose" aria-label="閉じる">×</button></div>
+        <button type="button" class="dateok" id="btnDateOk" tabindex="-1">製造年月 OK<small>目視で確認したら押す（Enter）</small></button>
+        <div class="field" id="fldMass">
+        <div class="lbl"><span>W（kg）</span><span id="massHint">「68」→6.8 と入力してもOK</span></div>
+        <div class="val" id="valMass"></div>
+      </div>
+      <div class="steps hidden" id="steps">
+        <button tabindex="-1" data-delta="-1"><b></b><span>前回 −0.1</span></button>
+        <button tabindex="-1" data-delta="0" class="same"><b></b><span>前回と同じ</span></button>
+        <button tabindex="-1" data-delta="1"><b></b><span>前回 ＋0.1</span></button>
+      </div>
+      <div class="cands hidden" id="cands"></div>
+      <div class="cands-note hidden" id="candsNote">タップで保存（濃い色ほどこのロットでよく出る値）</div>
+      <div class="extra-row" id="extraRow">
+        <button class="sealbtn" id="btnSeal" tabindex="-1">シール違い</button>
+        <button class="repairbtn" id="btnRepair" tabindex="-1">修正（品質不良）</button>
+        <button class="dupbtn" id="btnDupMass" tabindex="-1">ダブり</button>
+        <button class="clearbtn hidden" id="btnClear" tabindex="-1">この入力を消す</button>
+      </div>
+      </div>
+      <div class="pad" id="pad">
+        <button data-k="7">7</button><button data-k="8">8</button><button data-k="9">9</button><button class="fn" data-k="Backspace">⌫ 1字消す</button>
+        <button data-k="4">4</button><button data-k="5">5</button><button data-k="6">6</button><button class="fn" data-k="+">＋ 前回と同じ質量</button>
+        <button data-k="1">1</button><button data-k="2">2</button><button data-k="3">3</button><button class="enter" data-k="Enter">Enter<br>次へ／保存</button>
+        <button data-k="0">0</button><button data-k=".">.</button><button class="fn" data-k="-">－ 欠番</button>
+        <button class="fn" data-k="Escape">やり直し</button><button class="fn" data-k="*">＊ 直前を取消</button><button class="fn" data-k="/">／ NG</button>
+      </div>
+      <div id="opts">
+      <div class="keys">
+        テンキー操作: <b>Enter</b>次へ・保存　<b>+</b>前回と同じ質量　<b>-</b>欠番　<b>/</b>番号NG　<b>*</b>直前の入力を取消　<b>⌫</b>1字消す（空のとき前の欄へ戻る）
+      </div>
+      <label class="keys opt" style="display:flex;gap:8px;align-items:center;margin-top:6px">
+        <input type="checkbox" id="autoMode" style="width:auto" tabindex="-1"> Enterなしで自動確定（桁数がそろったら次へ・保存）
+      </label>
+      <label class="keys opt" style="display:flex;gap:8px;align-items:center">
+        <input type="checkbox" id="shortMode" style="width:auto" tabindex="-1"> 質量は小数第1位の1桁だけで保存（標準±0.5kgの範囲。範囲外は「.」のあと3桁）
+      </label>
+      <label class="keys opt" style="display:flex;gap:8px;align-items:center">
+        <input type="checkbox" id="dateOkMode" style="width:auto" tabindex="-1"> 製造年月OKを押してから質量を入力する（Enter で OK）
+      </label>
+      </div>
+      <div class="queue" id="queue"></div>
+    </div>
+
+    <div class="panel" id="gridPanel">
+      <div class="tabs" id="tabs"></div>
+      <div class="gridhead">
+        <div><b id="gridTitle"></b> <span class="sub" id="gridSub"></span></div>
+        <div class="count"><button class="lotnav" id="lotPrev" tabindex="-1" aria-label="前のロット">‹</button><span id="gridCount"></span><button class="lotnav" id="lotNext" tabindex="-1" aria-label="次のロット">›</button></div>
+      </div>
+      <div class="grid" id="grid"></div>
+    </div>
+  </div>
+</main>
+
+<dialog id="dlgDone">
+  <h3 id="dlgTitle">完了</h3>
+  <div class="missing-list" id="dlgMissing"></div>
+  <p class="sub" style="font-size:12px;color:var(--muted)">完了にすると成績表PDFを作ってドライブに保存します（メールは送りません。ホームの「検査表をまとめてメール送信」でまとめて送ります）。全数（欠番を含む）そろうとお知らせが出ます。確認して完了にしてください。</p>
+  <div class="msg" id="dlgMsg"></div>
+  <div class="row" style="justify-content:flex-end;margin-top:12px">
+    <button class="btn sec" id="dCancel">閉じる</button>
+    <button class="btn" id="dSave">完了にする</button>
+  </div>
+</dialog>
+
+<script>
+(function() {
+  const MASS_MIN = 0.1, MASS_MAX = 99.9, DEVIATION_KG = 0.5, TYPICAL_DEVIATION_KG = 1.5, MISSING = '欠番', REPAIR = '修正', CIRCLE = '〇', SOKO = '底黒';
+  function isMass(m) { return typeof m === 'number'; }
+  const $ = function(id) { return document.getElementById(id); };
+
+  const S = {
+    lots: [],          // 入力中ロット（entries: {serial: mass}）
+    done: [],
+    stage: 'num',      // num | actual | mass | undo
+    ng: false,
+    bufNum: '', bufActual: '', bufMass: '',
+    target: null,      // { lot, serial }
+    confirmDup: false,
+    ngFrom: '',        // NG時に最初に入力した番号
+    confirmMassText: null,
+    viewLotId: null,
+    lastMass: null,
+    queue: [], sending: false, sendError: null,
+    pending: {}, errors: {},  // key: lotId|serial
+    saved: [],         // サーバー保存済み { recordId, lotId, serial }
+    lastKey: null,
+    lastByLot: {},
+    overwrite: '',     // 上書きの理由: 'fix'（修正）/ 'dup'（ダブり）
+    claims: {},        // 使用中のロット { lotId: { worker, device, mine } }
+    seal: false,       // シール違い
+    typical: {},       // 容器区分ごとのいつもの質量（設定シート「標準質量」）     // ロットごとの最後に入れた質量（前回±0.1ボタン用）
+    workers: [], mail: { to: '', cc: '', auto: true },
+    auto: true,        // Enterなしで自動確定
+    numDigits: 3,      // 容器番号の入力桁数（入力中ロットの中で重ならない最小の下桁数）
+    short: true,       // 質量を1桁（小数第1位）で入力
+    localOps: [],      // 最新の読み込みより後にこの画面で入れた分（一覧の更新時に重ねる）
+    stale: false,      // 前回保存した一覧を表示中
+    fullMass: false    // 「.」を押して3桁入力に切り替えた状態
+  };
+  // 入力者・端末名はこの端末に記憶する（保存できない環境でも画面を開いている間は保持）
+  const memo = {};
+  const store = {
+    get: function(k) {
+      if (k in memo) return memo[k];
+      try { return localStorage.getItem(k) || ''; } catch (e) { return ''; }
+    },
+    set: function(k, v) { memo[k] = v; try { localStorage.setItem(k, v); } catch (e) { /* 無視 */ } }
+  };
+
+  // ---------- 共通 ----------
+  function call(fn, arg) {
+    return new Promise(function(resolve, reject) {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](arg);
+    });
+  }
+  // 読むだけの呼び出しは、Google側の一時的なエラー（ストレージ読み取りの INTERNAL など）なら少し待って2回までやり直す
+  function callRead(fn, arg, tries) {
+    tries = tries == null ? 2 : tries;
+    return call(fn, arg).catch(function(e) {
+      if (tries <= 0) throw e;
+      return new Promise(function(r) { setTimeout(r, 2500); }).then(function() { return callRead(fn, arg, tries - 1); });
+    });
+  }
+  // 確認は同じボタンの2回押しで行う（iPadの入力画面では confirm/alert のダイアログが出ないことがある）
+  function armed(btn, text) {
+    if (btn._armT && Date.now() - btn._armT < 5000) { btn._armT = 0; btn.innerHTML = btn._orig; return true; }
+    if (!btn._armT) btn._orig = btn.innerHTML;
+    btn._armT = Date.now(); btn.textContent = text;
+    setTimeout(function() { if (btn._armT && Date.now() - btn._armT >= 4900) { btn._armT = 0; btn.innerHTML = btn._orig; } }, 5000);
+    return false;
+  }
+  function homeMsg(text, kind) { $('lotMsg').className = 'msg' + (kind ? ' ' + kind : ''); $('lotMsg').textContent = text; }
+  // このiPadの印（使用中のロットを見分ける）
+  const DEV_ID = (function() {
+    let id = store.get('lpg.devId');
+    if (!id) { id = 'd' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); store.set('lpg.devId', id); }
+    return id;
+  })();
+  // 別のiPadが使用中なら { worker, device }
+  function lockedBy(l) {
+    const a = S.claims['*'];
+    if (l && a && !a.mine) return a;   // 別のiPadが入力中なら全部のロットが見るだけ
+    const c = l && S.claims[l.lotId]; return c && !c.mine ? c : null;
+  }
+  function lockText(c) { return [c.worker, c.device].filter(function(x) { return x; }).join('・') || '別のiPad'; }
+  function refuseLocked(l) {
+    const c = lockedBy(l);
+    if (!c) return false;
+    setNotice('🔒 ' + lockText(c) + ' が入力中のため、' + l.prefix + l.start + '〜' + l.end + ' は見るだけです', 'err');
+    beep(false); render();
+    return true;
+  }
+  let claimsTimer = null;
+  function pollClaims() {
+    clearTimeout(claimsTimer);
+    return call('getClaims', { devId: DEV_ID, worker: worker(), device: $('fDevice').value.trim() }).then(function(m) {
+      // まだ保存していない自分の入力があるロットは自分の使用中として扱う
+      Object.keys(S.claims).forEach(function(k) { if (S.claims[k].mine && !m[k] && S.queue.some(function(q) { return q.lotId === k; })) m[k] = S.claims[k]; });
+      const changed = JSON.stringify(m) !== JSON.stringify(S.claims);
+      S.claims = m || {};
+      if (changed) { if ($('entry').classList.contains('hidden')) renderHome(); else render(); }
+    }).catch(function() { /* 次で読み直す */ }).then(function() { claimsTimer = setTimeout(pollClaims, 20000); });
+  }
+  function errText(e) { return (e && e.message) ? e.message : String(e); }
+  function pad(n, w) { let s = String(n); while (s.length < w) s = '0' + s; return s; }
+  function disp3(serial) { return ('00' + (Number(serial) % 1000)).slice(-3); }
+  function lotSize(l) { return Number(l.end) - Number(l.start) + 1; }
+  function label(l, serial) { return l.prefix + serial; }
+  function lotById(id) { return S.lots.filter(function(l) { return l.lotId === id; })[0]; }
+  // 刻印の表記に合わせて「W34.8」で表示する
+  function fmtMass(m) { return m === MISSING || m === REPAIR || m === CIRCLE ? m : 'W' + Number(m).toFixed(1); }
+
+  let audio = null;
+  function beep(ok) {
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      const o = audio.createOscillator(), g = audio.createGain();
+      o.frequency.value = ok ? 1320 : 330; o.type = ok ? 'sine' : 'square';
+      g.gain.value = ok ? 0.08 : 0.12;
+      o.connect(g); g.connect(audio.destination);
+      o.start(); o.stop(audio.currentTime + (ok ? 0.08 : 0.35));
+    } catch (e) { /* 音が出せない環境は無視 */ }
+  }
+
+  // ---------- ホーム ----------
+  // 起動を速くするため、前回の一覧をこの端末に保存しておき、まずそれを表示してから最新に更新する
+  const BOOT_KEY = 'lpg.boot';
+  function applyBoot(b) {
+    $('user').textContent = b.user;
+    if (b.recentDone) S.done = b.recentDone; else S.done = S.done || [];
+    S.workers = b.workers; S.mail = b.mail; S.typical = b.typical || {};
+    // 既存のロットは同じ物を使い回して中身を最新にする（入力中の画面が参照しているため）
+    const old = {};
+    (S.lots || []).forEach(function(l) { old[l.lotId] = l; });
+    S.lots = b.lots.map(function(l) {
+      const cur = old[l.lotId];
+      // 先に来る軽い読み込みには印がない。前の印を残し、あとの読み込みで最新にする
+      if (!l.dups && cur) { l.dups = cur.dups || {}; l.seals = cur.seals || {}; }
+      if (!l.dups) { l.dups = {}; l.seals = {}; }
+      if (!cur) return l;
+      Object.keys(cur).forEach(function(k) { delete cur[k]; });
+      return Object.assign(cur, l);
+    });
+    // 最新の読み込みより後にこの画面で入れた分を上に重ねる
+    S.localOps.forEach(function(op) { const l = lotById(op.lotId); if (l) l.entries[op.serial] = op.mass; });
+  }
+  // 入力記録の整理（使わない列の削除・年替わりの移動）を裏で少しずつ進める。画面は待たない
+  let maintStarted = false;
+  function runMaintenance() {
+    call('runMaintenance').then(function(r) {
+      if (r && r.archiveDone === false) setTimeout(runMaintenance, 3000);
+    }).catch(function() { /* 次に開いたときにまた試す */ });
+  }
+  // 入力者と入力中の成績表を先に出し（軽い）、印と最近完了したロットはあとから（入力記録を読むので重い）
+  function saveBoot() {
+    try {
+      localStorage.setItem(BOOT_KEY, JSON.stringify({ user: $('user').textContent, workers: S.workers, mail: S.mail, typical: S.typical, lots: S.lots, recentDone: S.done }));
+    } catch (e) { /* 保存できなくても動く */ }
+  }
+  function loadHomeExtra() {
+    return callRead('getHomeExtra').then(function(x) {
+      S.lots.forEach(function(l) { const m = x.marks[l.lotId] || {}; l.dups = m.dups || {}; l.seals = m.seals || {}; });
+      S.done = x.recentDone;
+      saveBoot();
+      if ($('entry').classList.contains('hidden')) renderHome(); else render();
+    }).catch(function() { /* 印は前のまま。次に開いたときにまた読む */ });
+  }
+  function loadHome() {
+    const t0 = Date.now();
+    return callRead('getBootstrapLite').then(function(b) {
+      // 読み込み開始より前に保存済みの分は最新の一覧に入っている
+      S.localOps = S.localOps.filter(function(op) { return op.t >= t0 || S.pending[op.lotId + '|' + op.serial]; });
+      applyBoot(b);
+      S.stale = false; $('staleMsg').classList.add('hidden');
+      renderWorkers();
+      renderHome();
+      checkRecover();
+      saveBoot();
+      const extra = loadHomeExtra();
+      if (!maintStarted) { maintStarted = true; extra.then(function() { setTimeout(runMaintenance, 1500); }); }
+      if (!$('entry').classList.contains('hidden')) {
+        if (!lotById(S.viewLotId)) S.viewLotId = S.lots.length ? S.lots[0].lotId : null;
+        if (S.target && !lotById(S.target.lot.lotId)) resetEntry('ロットが更新されました。容器番号を入力', 'info');
+        S.numDigits = Math.max(S.numDigits, computeNumDigits());
+        render();
+      }
+    }).catch(function(e) {
+      $('staleMsg').classList.add('hidden');
+      $('lotMsg').className = 'msg err'; $('lotMsg').textContent = errText(e);
+    });
+  }
+  // ローディング画面は、前回の一覧か最新の一覧が出たら消す（一瞬で消えてちらつかないよう最低1秒は出す）
+  function hideSplash() {
+    const el = $('splash');
+    if (!el || el._h) return;
+    el._h = true;
+    setTimeout(function() { el.classList.add('out'); setTimeout(function() { el.remove(); }, 400); }, Math.max(0, 1000 - (Date.now() - (window.SPLASH_T0 || 0))));
+  }
+  // ---------- 送れていなかった入力の復旧（11/4: 送れないまま画面を閉じて約700本が消えた） ----------
+  const RECOVER_KEY = 'lpg.recover';
+  let RECOVER_SNAP = null, recoverChecked = false, recoverList = [];
+  function checkRecover() {
+    if (recoverChecked || !RECOVER_SNAP) return;
+    recoverChecked = true;
+    const list = [];
+    Object.keys(RECOVER_SNAP).forEach(function(lotId) {
+      const l = lotById(lotId);
+      if (!l) return;   // 完了・削除したロットは対象外
+      const cached = RECOVER_SNAP[lotId] || {};
+      Object.keys(cached).forEach(function(serial) {
+        if (serial in l.entries || S.pending[lotId + '|' + serial]) return;
+        list.push({ lotId: lotId, serial: serial, mass: cached[serial] });
+      });
+    });
+    recoverList = list;
+    try {
+      if (list.length) localStorage.setItem(RECOVER_KEY, JSON.stringify({ snap: RECOVER_SNAP })); else localStorage.removeItem(RECOVER_KEY);
+    } catch (e) { /* 残せなくても画面には出す */ }
+    renderRecover();
+  }
+  function renderRecover() {
+    const box = $('recoverBox');
+    if (!recoverList.length) { box.classList.add('hidden'); return; }
+    const by = {};
+    recoverList.forEach(function(x) { by[x.lotId] = (by[x.lotId] || 0) + 1; });
+    box.classList.remove('hidden');
+    $('recoverMsg').textContent = 'このiPadに、サーバーに届いていない入力が ' + recoverList.length + ' 本残っていました（' +
+      Object.keys(by).map(function(k) { const l = lotById(k); return (l ? l.prefix + l.start : k) + ' ' + by[k] + '本'; }).join('・') +
+      '）。送ると成績表に入ります（入力者は今選んでいる人、日時は送った時刻）。';
+  }
+  function sendRecover() {
+    const n = recoverList.length;
+    recoverList.forEach(function(x) {
+      const m = x.mass;
+      enqueue({ lotId: x.lotId, serial: x.serial, mass: typeof m === 'number' ? m : null,
+        missing: m === MISSING, repair: m === REPAIR, worker: worker(), device: $('fDevice').value.trim() });
+      const l = lotById(x.lotId); if (l) l.entries[x.serial] = m;
+      S.localOps.push({ lotId: x.lotId, serial: x.serial, mass: m, t: Date.now() });
+    });
+    recoverList = [];
+    try { localStorage.removeItem(RECOVER_KEY); } catch (e) { /* 無視 */ }
+    renderRecover();
+    homeMsg('残っていた入力 ' + n + ' 本を送っています', 'ok');
+    renderHome();
+  }
+  function loadCachedBoot() {
+    let b = null;
+    try { b = JSON.parse(localStorage.getItem(BOOT_KEY) || 'null'); } catch (e) { b = null; }
+    if (!b || !b.lots) return;
+    // 復旧用: 前回の一覧（この画面で入れたまま送れなかった分も入っている）を、最新の一覧で上書きされる前に控える
+    try {
+      const snap = {};
+      b.lots.forEach(function(l) { if (l && l.lotId && l.entries) snap[l.lotId] = l.entries; });
+      const prev = JSON.parse(localStorage.getItem(RECOVER_KEY) || 'null');
+      RECOVER_SNAP = prev && prev.snap ? prev.snap : snap;
+    } catch (e) { RECOVER_SNAP = null; }
+    applyBoot(b);
+    S.stale = true; $('staleMsg').classList.remove('hidden');
+    renderWorkers();
+    renderHome();
+    hideSplash();
+  }
+
+  function renderWorkers() {
+    const sel = $('fWorker'), saved = store.get('lpg.worker');
+    sel.innerHTML = '<option value="">（選択してください）</option>';
+    S.workers.forEach(function(n) {
+      const o = document.createElement('option'); o.value = n; o.textContent = n; sel.appendChild(o);
+    });
+    if (saved && S.workers.indexOf(saved) < 0 && S.workers.length === 0) {
+      const o = document.createElement('option'); o.value = saved; o.textContent = saved; sel.appendChild(o);
+    }
+    sel.value = S.workers.indexOf(saved) >= 0 || !S.workers.length ? saved : '';
+    $('fDevice').value = store.get('lpg.device');
+    $('workerMsg').textContent = S.workers.length ? '' : '「入力者」シートにスタッフ名を登録すると、ここで選べるようになります。';
+    updateWorkerBadge();
+  }
+  function worker() { return $('fWorker').value; }
+  function updateWorkerBadge() {
+    $('workerBadge').textContent = worker() ? '入力者: ' + worker() + ($('fDevice').value ? '（' + $('fDevice').value + '）' : '') : '';
+  }
+  S.auto = store.get('lpg.auto') !== '0';
+  $('autoMode').checked = S.auto;
+  S.needDateOk = store.get('lpg.dateok') !== '0';
+  $('dateOkMode').checked = S.needDateOk;
+  $('dateOkMode').onchange = function() {
+    S.needDateOk = $('dateOkMode').checked; store.set('lpg.dateok', S.needDateOk ? '1' : '0'); this.blur(); render();
+  };
+  S.short = store.get('lpg.short') !== '0';
+  $('shortMode').checked = S.short;
+  $('shortMode').onchange = function() {
+    S.short = $('shortMode').checked; store.set('lpg.short', S.short ? '1' : '0'); this.blur(); render();
+  };
+  $('autoMode').onchange = function() {
+    S.auto = $('autoMode').checked; store.set('lpg.auto', S.auto ? '1' : '0'); this.blur(); render();
+  };
+
+  $('fWorker').onchange = function() { store.set('lpg.worker', worker()); updateWorkerBadge(); renderHome(); };
+  $('fDevice').oninput = function() { store.set('lpg.device', $('fDevice').value.trim()); updateWorkerBadge(); };
+
+  function countOf(l) {
+    let filled = 0, missing = 0;
+    let repair = 0;
+    Object.keys(l.entries).forEach(function(k) { if (l.entries[k] === MISSING) missing++; else if (l.entries[k] === REPAIR) repair++; else filled++; });
+    missing += repair;
+    return { filled: filled, missing: missing, size: lotSize(l) };
+  }
+
+  function lotCard(l, done) {
+    const c = countOf(l);
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = '<h3></h3><div class="sub"></div><div class="bar"><div></div></div><div class="sub cnt"></div><div class="row" style="margin-top:10px"></div>';
+    div.querySelector('h3').innerHTML = (l.spec === SOKO ? '<span class="ln-soko">底黒</span>' : '') + lotNumHtml(l) +
+      '<span class="ln-range">' + esc(l.prefix + l.start) + ' ～ ' + esc(l.prefix + l.end) + '</span>';
+    div.querySelector('.sub').textContent = (l.kind || '') + '　' + l.sheetName;
+    div.querySelector('.bar > div').style.width = Math.round((c.filled + c.missing) / c.size * 100) + '%';
+    div.querySelector('.cnt').textContent = '入力 ' + c.filled + ' 本' + (c.missing ? '・欠番 ' + c.missing : '') + ' ／ ' + c.size + ' 本' +
+      (l.dups && Object.keys(l.dups).length ? '　ダブり ' + Object.keys(l.dups).length + '件' : '') +
+      (Object.keys(l.entries).some(function(k) { return l.entries[k] === REPAIR; }) ? '　修正 ' + Object.keys(l.entries).filter(function(k) { return l.entries[k] === REPAIR; }).length + '本' : '') +
+      (l.seals && Object.keys(l.seals).length ? '　シール違い ' + Object.keys(l.seals).length + '件' : '') +
+      (done ? (l.sentAt ? '　送信済 ' + l.sentAt : (l.sentTo ? '　' + l.sentTo : '　未送信')) : '') +
+      '';
+    const row = div.querySelector('.row');
+    // 別のiPadが入力中のロットは見るだけ（完了・機種変更・削除のボタンを出さない）
+    const lk = !done && lockedBy(l);
+    if (lk) {
+      const n = document.createElement('div'); n.className = 'lock-note'; n.textContent = '🔒 ' + lockText(lk) + ' が入力中（見るだけ）';
+      row.appendChild(n);
+      return div;
+    }
+    // 登録間違いの削除（最後に付ける）
+    const addDelete = function() {
+      const del = document.createElement('button');
+      del.className = 'btn sec'; del.textContent = '削除'; del.style.color = 'var(--ng)'; del.style.marginLeft = 'auto';
+      del.onclick = function() {
+        const n = c.filled + c.missing;
+        const name = (l.spec === SOKO ? '【底黒】' : '') + l.prefix + l.start + '〜' + l.prefix + l.end;
+        if (!armed(del, 'もう一度押すと削除')) {
+          homeMsg(name + ' を削除するには、もう一度「もう一度押すと削除」を押してください。成績表シートも消えます。' +
+            (n ? '入力済みが ' + n + ' 本あります（入力記録は「削除」として残ります）。' : ''), 'err');
+          return;
+        }
+        del.disabled = true;
+        call('deleteLot', { lotId: l.lotId, devId: DEV_ID }).then(function() { homeMsg('削除しました: ' + name, 'ok'); return loadHome(); })
+          .catch(function(e) { homeMsg(errText(e), 'err'); del.disabled = false; });
+      };
+      row.appendChild(del);
+    };
+    // 削除できるのは入力中のロットだけ（完了したロットは成績表を保存済みなので消させない）
+    if (!done) setTimeout(addDelete, 0);
+    if (!done) {
+      const b = document.createElement('button');
+      b.className = 'btn sec'; b.textContent = '完了にする';
+      b.onclick = function() { openDone(l); };
+      row.appendChild(b);
+      // 機種を変更（押すと選択欄が出る）
+      const kb = document.createElement('button');
+      kb.className = 'btn sec'; kb.textContent = '機種を変更';
+      kb.onclick = function() {
+        const sel = document.createElement('select');
+        sel.style.width = 'auto'; sel.style.fontSize = '16px';
+        KIND_ORDER.forEach(function(k) {
+          const o = document.createElement('option'); o.value = k; o.textContent = k; if (k === l.kind) o.selected = true; sel.appendChild(o);
+        });
+        const ok = document.createElement('button'); ok.className = 'btn'; ok.textContent = '変更';
+        const cancel = document.createElement('button'); cancel.className = 'btn sec'; cancel.textContent = 'やめる';
+        const wrap = document.createElement('span'); wrap.className = 'row'; wrap.style.gap = '6px';
+        wrap.appendChild(sel); wrap.appendChild(ok); wrap.appendChild(cancel);
+        row.replaceChild(wrap, kb);
+        cancel.onclick = function() { row.replaceChild(kb, wrap); };
+        ok.onclick = function() {
+          ok.disabled = true;
+          call('changeLotKind', { lotId: l.lotId, kind: sel.value, devId: DEV_ID }).then(loadHome)
+            .catch(function(e) { homeMsg(errText(e), 'err'); ok.disabled = false; });
+        };
+      };
+      row.appendChild(kb);
+    } else {
+      const b = document.createElement('button');
+      b.className = 'btn sec'; b.textContent = '入力を再開';
+      b.onclick = function() {
+        b.disabled = true;
+        call('reopenLot', l.lotId).then(loadHome).catch(function(e) { homeMsg(errText(e), 'err'); b.disabled = false; });
+      };
+      row.appendChild(b);
+      // 送らないロットは、送らずに一覧から消す（成績表PDFは残る。まとめて送信からは後でも送れる）
+      if (!l.sentAt) {
+        const sk = document.createElement('button');
+        sk.className = 'btn sec'; sk.textContent = '送らずに消す'; sk.style.color = 'var(--ng)'; sk.style.marginLeft = 'auto';
+        sk.onclick = function() {
+          const name = l.prefix + l.start + '〜' + l.prefix + l.end;
+          if (!armed(sk, 'もう一度押すと消す')) { homeMsg(name + ' をメールで送らずに一覧から消します（成績表PDFはドライブに残ります）。もう一度押すと消します', 'err'); return; }
+          sk.disabled = true;
+          call('skipLotMail', { lotId: l.lotId }).then(function() { homeMsg('送らずに消しました: ' + name, 'ok'); return loadHome(); })
+            .catch(function(e) { homeMsg(errText(e), 'err'); sk.disabled = false; });
+        };
+        setTimeout(function() { row.appendChild(sk); }, 0);
+      }
+      // 送信済みのロットは、表示から消す（成績表PDF・送信の記録は残る。まとめて送信の一覧には出る）
+      if (l.sentAt) {
+        const hd = document.createElement('button');
+        hd.className = 'btn sec'; hd.textContent = '一覧から消す'; hd.style.color = 'var(--ng)'; hd.style.marginLeft = 'auto';
+        hd.onclick = function() {
+          const name = l.prefix + l.start + '〜' + l.prefix + l.end;
+          if (!armed(hd, 'もう一度押すと消す')) { homeMsg(name + ' を「最近完了したロット」から消します（成績表PDF・送信の記録は残ります）。もう一度押すと消します', 'err'); return; }
+          hd.disabled = true;
+          call('hideDoneLot', { lotId: l.lotId }).then(function() { homeMsg('一覧から消しました: ' + name, 'ok'); return loadHome(); })
+            .catch(function(e) { homeMsg(errText(e), 'err'); hd.disabled = false; });
+        };
+        setTimeout(function() { row.appendChild(hd); }, 0);
+      }
+      // メールは1通ずつ送らない（ホームの「検査表をまとめてメール送信」で送る）
+      if (l.pdf) {
+        const a = document.createElement('a');
+        a.href = l.pdf; a.target = '_blank'; a.textContent = 'PDFを開く'; a.style.marginLeft = '8px';
+        row.appendChild(a);
+      }
+    }
+    return div;
+  }
+
+  // 容器区分（機種）の並び順
+  const KIND_ORDER = ['5kg', '8kg', '10kg', '20kg', '20kg三部制', '30kg', '30kg把手', '50kg', '50kg S付', 'その他'];
+  function kindRank(k) { const i = KIND_ORDER.indexOf(k); return i < 0 ? KIND_ORDER.length : i; }
+  function groupByKind(lots) {
+    const map = {};
+    lots.forEach(function(l) { const k = l.kind || 'その他'; (map[k] = map[k] || []).push(l); });
+    return Object.keys(map).sort(function(a, b) { return kindRank(a) - kindRank(b) || a.localeCompare(b); })
+      .map(function(k) { return { kind: k, lots: map[k] }; });
+  }
+
+  let kindFilter = store.get('lpg.kind') || '';
+  function renderHome() {
+    const act = $('activeLots'); act.innerHTML = '';
+    const groups = groupByKind(S.lots);
+    // 機種の切り替えボタン
+    // 機種の切り替えボタン（ロットが0の機種も出す）
+    const kf = $('kindFilter'); kf.innerHTML = '';
+    const counts = {};
+    groups.forEach(function(g) { counts[g.kind] = g.lots.length; });
+    const kinds = KIND_ORDER.concat(groups.map(function(g) { return g.kind; }).filter(function(k) { return KIND_ORDER.indexOf(k) < 0; }));
+    [''].concat(kinds).forEach(function(k) {
+      const n = k ? (counts[k] || 0) : S.lots.length;
+      const b = document.createElement('button');
+      b.textContent = (k || 'すべて') + '（' + n + '）';
+      b.className = (k === kindFilter ? 'on' : '') + (n === 0 ? ' zero' : '');
+      b.onclick = function() { kindFilter = k; store.set('lpg.kind', kindFilter); renderHome(); };
+      kf.appendChild(b);
+    });
+    const shown = groups.filter(function(g) { return !kindFilter || g.kind === kindFilter; });
+    const n = shown.reduce(function(a, g) { return a + g.lots.length; }, 0);
+    $('activeCount').textContent = S.lots.length ? n + 'ロット' + (kindFilter ? '（' + kindFilter + '）' : '') + '・枠の中をスクロールできます' : '';
+    if (!S.lots.length) act.innerHTML = '<div class="sub">入力中のロットはありません。下で組容器番号を登録してください。</div>';
+    else if (!n) act.innerHTML = '<div class="sub">' + kindFilter + 'の入力中ロットはありません。</div>';
+    shown.forEach(function(g) {
+      if (groups.length > 1 && !kindFilter) {
+        const h = document.createElement('div'); h.className = 'kind-head';
+        h.textContent = g.kind + '（' + g.lots.length + 'ロット）';
+        act.appendChild(h);
+      }
+      g.lots.forEach(function(l) { act.appendChild(lotCard(l, false)); });
+    });
+    const dn = $('doneLots'); dn.innerHTML = '';
+    // 送ったロットは、チェックを入れたときだけ出す（いつも出すと見にくい）
+    const showSent = $('showSentDone').checked;
+    const doneShown = S.done.filter(function(l) { return showSent || !l.sentAt; });
+    if (!doneShown.length) dn.innerHTML = '<div class="sub">' + (S.done.length ? '送っていない完了ロットはありません' : 'まだありません') + '</div>';
+    doneShown.forEach(function(l) { dn.appendChild(lotCard(l, true)); });
+    if (bulkLots && bulkLots.length) renderBulk();
+    $('btnStart').disabled = !S.lots.length || (S.workers.length > 0 && !worker());
+    $('btnStart').textContent = S.workers.length && !worker() ? '入力者を選ぶと入力できます' : '入力を始める';
+  }
+
+  // 開始〜終了を 001〜100 区切りの100本単位に分けた各ロットの開始番号
+  function lotBlocks(s, e) {
+    const out = [];
+    for (let b = s - ((s - 1) % 100 + 100) % 100; b <= e; b += 100) out.push(b);
+    return out;
+  }
+  function updateLotPreview() {
+    const st = $('fStart').value.trim(), en = $('fEnd').value.trim();
+    $('fEnd').placeholder = /^\d+$/.test(st) ? '空欄なら ' + pad(Number(st) + 99, st.length) + ' まで' : '空欄なら100本';
+    const btn = $('btnCreate');
+    if (/^\d+$/.test(st) && /^\d+$/.test(en) && Number(en) >= Number(st)) {
+      const b = lotBlocks(Number(st), Number(en)), w = Math.max(st.length, en.length), pre = $('fPrefix').value.trim().toUpperCase();
+      btn.textContent = b.length + 'ロット登録';
+      $('lotMsg').className = 'msg';
+      $('lotMsg').textContent = pre + pad(b[0], w) + '〜' + pre + pad(b[b.length - 1] + 99, w) + ' を100本ずつ ' + b.length + 'ロットに分けて作ります' + ($('fSpec').value ? '（' + $('fSpec').value + '）' : '');
+    } else {
+      btn.textContent = '登録';
+    }
+  }
+  ['fStart', 'fEnd', 'fPrefix'].forEach(function(id) { $(id).addEventListener('input', updateLotPreview); });
+  $('fSpec').addEventListener('change', updateLotPreview);
+
+  $('btnCreate').onclick = function() {
+    const btn = $('btnCreate'); btn.disabled = true;
+    const input = { prefix: $('fPrefix').value, start: $('fStart').value, end: $('fEnd').value, kind: $('fKind').value, spec: $('fSpec').value };
+    const bulk = input.end.trim() !== '';
+    $('lotMsg').className = 'msg';
+    $('lotMsg').textContent = '登録中…（成績表シートを作成しています' + (bulk ? '。ロット数が多いと1〜2分かかります' : '') + '）';
+    call(bulk ? 'createLots' : 'createLot', input).then(function(r) {
+      $('lotMsg').textContent = bulk
+        ? r.created.length + 'ロット登録しました' + (r.created.length ? '（' + r.created[0] + (r.created.length > 1 ? '〜' + r.created[r.created.length - 1] : '') + '）' : '') +
+          (r.skipped.length ? '。登録済みのため飛ばしたもの: ' + r.skipped.join('、') : '')
+        : '登録しました: ' + r.lotId + '（' + r.sheetName + '）';
+      $('fStart').value = ''; $('fEnd').value = ''; $('btnCreate').textContent = '登録';
+      return loadHome();
+    }).catch(function(e) {
+      $('lotMsg').className = 'msg err'; $('lotMsg').textContent = errText(e);
+    }).then(function() { btn.disabled = false; });
+  };
+
+  // 入力は1台だけ: 入力開始でこのiPadを入力中にする（別のiPadが入力中なら入れない）
+  $('btnStart').onclick = function() {
+    const b = this; b.disabled = true;
+    call('claimInput', { devId: DEV_ID, worker: worker(), device: $('fDevice').value.trim() }).then(function(m) {
+      b.disabled = false; S.claims = m || {}; showEntry();
+    }).catch(function(e) {
+      b.disabled = false;
+      // 通信できないときは入力画面には入れる（保存はサーバーで見分ける）
+      if (/入力中です/.test(errText(e))) { homeMsg('🔒 ' + errText(e), 'err'); pollClaims(); return; }
+      showEntry();
+    });
+  };
+  (function() {
+    const d = new Date(), p2 = function(n) { return ('0' + n).slice(-2); };
+    $('saibanDate').value = d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate());
+  })();
+  function showSaiban(r) {
+    const m = $('saibanMsg'); m.innerHTML = '';
+    if (!r.count) { m.className = 'msg'; m.textContent = r.date + ' に流れた容器はありません'; return; }
+    m.className = 'msg ok';
+    m.appendChild(document.createTextNode(r.date + ' の採番表（' + r.count + '本）: '));
+    [['PDF', r.pdfUrl], ['スプレッドシート', r.sheetUrl]].forEach(function(x) {
+      if (!x[1]) return;
+      const a = document.createElement('a'); a.href = x[1]; a.target = '_blank'; a.textContent = x[0]; a.style.marginRight = '12px';
+      m.appendChild(a);
+    });
+  }
+  function makeSaiban(date, b) {
+    b.disabled = true;
+    $('saibanMsg').className = 'msg'; $('saibanMsg').textContent = '作成中…';
+    return call('makeSaibanPdf', { date: date }).then(function(r) { b.disabled = false; showSaiban(r); })
+      .catch(function(e) { b.disabled = false; $('saibanMsg').className = 'msg err'; $('saibanMsg').textContent = errText(e); });
+  }
+  $('btnSaiban').onclick = function() { makeSaiban($('saibanDate').value, this); };
+  // 本日生産終了: 今日の採番表をその場で作る（押し間違い防止に2回押し）
+  $('btnDayEnd').onclick = function() {
+    if (!armed(this, 'もう一度押すと今日の採番表を作ります')) return;
+    const d = new Date(), p2 = function(n) { return ('0' + n).slice(-2); };
+    makeSaiban(d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()), this);
+  };
+  // ---------- 検査表をまとめてメール送信 ----------
+  var bulkLots = [];   // var: renderHome から先に参照されることがある
+  function bulkChecked() {
+    return Array.prototype.slice.call($('bulkList').querySelectorAll('input:checked')).map(function(x) { return x.value; });
+  }
+  var bulkDays = [];
+  function bulkDaysChecked() {
+    return Array.prototype.slice.call($('bulkDays').querySelectorAll('input:checked')).map(function(x) { return x.value; });
+  }
+  function bulkUpdate() {
+    const n = bulkChecked().length, d = bulkDaysChecked().length, b = $('btnBulkSend');
+    b._armT = 0;
+    b.textContent = n || d ? (n ? '選んだ ' + n + ' ロット' + (n > 20 ? '（' + Math.ceil(n / 20) + '通）' : '') : '') + (n && d ? '＋' : '') +
+      (d ? '採番表 ' + d + '日分' : '') + 'を送信' : 'ロットか採番表の日を選んでください';
+    b.disabled = !n && !d;
+  }
+  function renderBulkDays() {
+    const box = $('bulkDays'); box.innerHTML = '';
+    // 送った日は出さない（「送った日も表示」で送り直せる）
+    const days = bulkDays.filter(function(x) { return !x.sent || $('showSentDays').checked; });
+    if (!days.length) { box.innerHTML = '<div class="sub">まだ送っていない採番表はありません</div>'; bulkUpdate(); return; }
+    const wd = '日月火水木金土';
+    days.forEach(function(x) {
+      const lab = document.createElement('label');
+      const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = x.date; cb.checked = !x.sent; cb.onchange = bulkUpdate;
+      const p = x.date.split('-'), dt = new Date(+p[0], +p[1] - 1, +p[2]);
+      const t = document.createElement('span'); t.textContent = (+p[1]) + '/' + (+p[2]) + '（' + wd[dt.getDay()] + '）' + x.count + '本';
+      const st = document.createElement('span'); st.className = 'bk-sent'; st.textContent = x.sent ? '送信済' : '未送信';
+      if (!x.sent) st.style.color = 'var(--ng)';
+      lab.appendChild(cb); lab.appendChild(t); lab.appendChild(st);
+      box.appendChild(lab);
+    });
+  }
+  function renderBulk() {
+    const list = $('bulkList'); list.innerHTML = '';
+    const lots = bulkLots.filter(function(l) { return !kindFilter || (l.kind || 'その他') === kindFilter; });
+    if (!lots.length) { list.innerHTML = '<div class="sub">完了したロットはありません</div>'; }
+    groupByKind(lots).forEach(function(g) {
+      if (!kindFilter) { const h = document.createElement('div'); h.className = 'bk-kind'; h.textContent = g.kind; list.appendChild(h); }
+      g.lots.forEach(function(l) {
+        const lab = document.createElement('label');
+        const cb = document.createElement('input'); cb.type = 'checkbox'; cb.value = l.lotId; cb.checked = !l.sentAt && !l.skipped; cb.onchange = bulkUpdate;
+        const t = document.createElement('span'); t.textContent = l.prefix + l.start + ' ～ ' + l.end;
+        const st = document.createElement('span'); st.className = 'bk-sent'; st.textContent = l.sentAt ? '送信済 ' + l.sentAt.replace(/^\d{4}[\/-]/, '').replace(/:\d\d$/, '') : l.skipped ? '送らない' : '未送信';
+        if (!l.sentAt && !l.skipped) st.style.color = 'var(--ng)';
+        lab.appendChild(cb); lab.appendChild(t); lab.appendChild(st);
+        list.appendChild(lab);
+      });
+    });
+    ['btnBulkUnsent', 'btnBulkNone'].forEach(function(id) { $(id).classList.toggle('hidden', !lots.length); });
+    $('btnBulkSend').classList.remove('hidden');
+    bulkUpdate();
+  }
+  function loadBulk() {
+    const b = $('btnBulkLoad'); b.disabled = true;
+    return Promise.all([callRead('listDoneLots'), callRead('listSaibanDays')]).then(function(r) {
+      b.disabled = false; b.textContent = '一覧を更新'; bulkLots = r[0]; bulkDays = r[1] || []; renderBulkDays(); renderBulk();
+    })
+      .catch(function(e) { b.disabled = false; $('bulkMsg').className = 'msg err'; $('bulkMsg').textContent = errText(e) + '（時間をおいて「完了したロットを表示」をもう一度押してください）'; });
+  }
+  $('btnBulkLoad').onclick = loadBulk;
+  function devlogUnsent() {
+    const queued = {};
+    S.queue.forEach(function(q) { queued[q.clientId] = 1; });
+    return devlog.filter(function(x) { return !x.ok && !queued[x.e.clientId]; });
+  }
+  $('btnDevlog').onclick = function() {
+    const un = devlogUnsent().length;
+    $('devlogMsg').textContent = '控え ' + devlog.length + ' 本（新しい1500本まで）・サーバーに届いた印がないもの ' + un + ' 本・送信エラーの記録 ' + errlogList().length + ' 件';
+    $('devlogBox').classList.toggle('hidden');
+  };
+  $('btnDevlogResend').onclick = function() {
+    const un = devlogUnsent();
+    if (!un.length) { $('devlogMsg').textContent = '届いていない入力はありません'; return; }
+    if (!armed(this, 'もう一度押すと送り直す')) { $('devlogMsg').textContent = un.length + ' 本を送り直します（同じ入力が2回届いても二重にはなりません）。もう一度押してください'; return; }
+    un.forEach(function(x) {
+      const e = x.e, key = e.lotId + '|' + e.serial;
+      S.pending[key] = (S.pending[key] || 0) + 1;
+      S.queue.push(e);
+    });
+    saveQueue(); pump();
+    $('devlogMsg').textContent = un.length + ' 本を送り直しています';
+  };
+  $('btnDevlogCsv').onclick = function() {
+    const p2 = function(n) { return ('0' + n).slice(-2); };
+    const rows = [['入力日時', 'ロット', '容器番号', '質量', '区分', '入力者', '端末', 'サーバーに届いた']];
+    devlog.forEach(function(x) {
+      const d = new Date(x.t), e = x.e;
+      rows.push([d.getFullYear() + '/' + p2(d.getMonth() + 1) + '/' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()),
+        e.lotId, e.serial, e.mass === null || e.mass === undefined ? '' : e.mass, e.missing ? '欠番' : e.repair ? '修正' : e.overwrite === 'dup' ? 'ダブり' : e.overwrite === 'fix' ? '訂正' : '',
+        e.worker || '', e.device || '', x.ok ? '○' : '×']);
+    });
+    const csv = '\ufeff' + rows.map(function(r) { return r.map(function(v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const n = new Date(); a.download = '入力の控え_' + n.getFullYear() + p2(n.getMonth() + 1) + p2(n.getDate()) + '_' + p2(n.getHours()) + p2(n.getMinutes()) + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  function saveCsv(rows, name) {
+    const csv = '\ufeff' + rows.map(function(r) { return r.map(function(v) { return '"' + String(v).replace(/"/g, '""') + '"'; }).join(','); }).join('\r\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+    const p2 = function(n) { return ('0' + n).slice(-2); }, n = new Date();
+    a.download = name + '_' + n.getFullYear() + p2(n.getMonth() + 1) + p2(n.getDate()) + '_' + p2(n.getHours()) + p2(n.getMinutes()) + '.csv';
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  $('btnErrlogCsv').onclick = function() {
+    const p2 = function(n) { return ('0' + n).slice(-2); };
+    const rows = [['日時', 'エラーの内容', '止まっていた入力（ロット）', '容器番号', '送信待ちの本数', '入力者', '端末', '電波（iPadの判定）']];
+    errlogList().forEach(function(x) {
+      const d = new Date(x.t);
+      rows.push([d.getFullYear() + '/' + p2(d.getMonth() + 1) + '/' + p2(d.getDate()) + ' ' + p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()),
+        x.msg, x.lot, x.serial, x.waiting, x.worker, x.device, x.online ? 'あり' : 'なし']);
+    });
+    if (rows.length === 1) { $('devlogMsg').textContent = '送信エラーの記録はありません'; return; }
+    saveCsv(rows, '送信エラー');
+  };
+  $('btnRecoverSend').onclick = function() { if (!armed(this, 'もう一度押すと送る')) return; sendRecover(); };
+  $('btnRecoverDrop').onclick = function() {
+    if (!armed(this, 'もう一度押すと消す')) return;
+    recoverList = []; try { localStorage.removeItem(RECOVER_KEY); } catch (e) { /* 無視 */ } renderRecover();
+  };
+  $('showSentDays').onchange = function() { renderBulkDays(); bulkUpdate(); };
+  $('showSentDone').checked = store.get('lpg.showSentDone') === '1';
+  $('showSentDone').onchange = function() { store.set('lpg.showSentDone', this.checked ? '1' : '0'); renderHome(); };
+  $('btnBulkUnsent').onclick = function() {
+    Array.prototype.forEach.call($('bulkList').querySelectorAll('input'), function(x) {
+      const l = bulkLots.find(function(y) { return y.lotId === x.value; }); x.checked = !!l && !l.sentAt && !l.skipped;
+    });
+    bulkUpdate();
+  };
+  $('btnBulkNone').onclick = function() {
+    Array.prototype.forEach.call($('bulkList').querySelectorAll('input'), function(x) { x.checked = false; });
+    bulkUpdate();
+  };
+  $('btnBulkSend').onclick = function() {
+    const ids = bulkChecked(), days = bulkDaysChecked(), b = this;
+    if (!ids.length && !days.length) return;
+    const m = $('bulkMsg');
+    const what = (ids.length ? ids.length + ' ロット分' : '') + (ids.length && days.length ? '＋' : '') + (days.length ? '採番表 ' + days.length + '日分' : '');
+    if (!armed(b, 'もう一度押すと送信')) { m.className = 'msg err'; m.textContent = (S.mail.to || '（送付先未設定）') + ' に ' + what + 'を送ります。もう一度押すと送信します'; return; }
+    b.disabled = true; m.className = 'msg'; m.textContent = '送信中…（PDFを集めています。数十秒かかることがあります）';
+    call('sendLotsMail', { lotIds: ids, saibanDays: days }).then(function(r) {
+      m.className = 'msg ok'; m.textContent = r.sentTo + ' に ' + (r.lots ? r.lots + ' ロット分' : '') + (r.lots && r.saiban ? '＋' : '') + (r.saiban ? '採番表 ' + r.saiban + '日分' : '') + 'を送信しました' + (r.mails > 1 ? '（' + r.mails + '通）' : '');
+      return Promise.all([loadBulk(), loadHome()]);
+    }).catch(function(e) { b.disabled = false; m.className = 'msg err'; m.textContent = errText(e); });
+  };
+
+  $('btnHome').onclick = function() {
+    if (S.queue.length && !armed(this, 'もう一度押すと戻る')) { setNotice('まだ送信中の入力があります。一覧に戻っても送信は続きます', 'warn'); return; }
+    $('entry').classList.add('hidden'); $('home').classList.remove('hidden'); $('btnHome').classList.add('hidden');
+    // ホームに戻ったらこのiPadの使用中を外す（まだ送信中の入力があるロットは送り終わると、また使用中になる）
+    Object.keys(S.claims).forEach(function(k) { if (S.claims[k].mine) delete S.claims[k]; });
+    call('releaseLots', { devId: DEV_ID, worker: worker(), device: $('fDevice').value.trim() }).catch(function() { /* 10分で外れる */ });
+    loadHome();
+  };
+
+  // ---------- 完了ダイアログ ----------
+  let doneLot = null;
+  function openDone(l) {
+    doneLot = l;
+    $('dlgTitle').textContent = '完了・送信　' + l.prefix + l.start + ' ～ ' + l.end;
+    const miss = [];
+    for (let i = 0; i < lotSize(l); i++) {
+      const s = pad(Number(l.start) + i, l.start.length);
+      if (!(s in l.entries)) miss.push(disp3(s));
+    }
+    $('dlgMissing').textContent = miss.length ? '未入力 ' + miss.length + ' 本: ' + miss.join(', ') : '';
+    $('dlgMsg').textContent = '';
+    $('dlgDone').showModal();
+  }
+  $('dCancel').onclick = function() { $('dlgDone').close(); };
+  function doneResultText(r) {
+    return '完了しました（PDF保存）' + (r.sentTo ? '。メール送信: ' + r.sentTo : '') + (r.mailError ? '。メール送信失敗: ' + r.mailError : '');
+  }
+  $('dSave').onclick = function() {
+    // このiPadにまだ送れていない入力があるロットは完了にしない（11/4: 送れないまま表だけ埋まって見え、足りないまま完了になった）
+    const unsent = S.queue.filter(function(q) { return q.lotId === doneLot.lotId; }).length;
+    if (unsent || S.sendError) {
+      $('dlgMsg').className = 'msg err';
+      $('dlgMsg').textContent = unsent ? 'このロットにまだ送れていない入力が ' + unsent + ' 本あります。「すべて保存済み」になってから完了してください' :
+        '保存に失敗している入力があります。送り終わってから完了してください';
+      return;
+    }
+    const miss = $('dlgMissing').textContent;
+    if (miss && !armed($('dSave'), 'もう一度押すと完了')) { $('dlgMsg').className = 'msg err'; $('dlgMsg').textContent = miss.split(':')[0] + ' あります。このまま完了にするなら、もう一度押してください'; return; }
+    const btn = $('dSave'); btn.disabled = true;
+    $('dlgMsg').className = 'msg'; $('dlgMsg').textContent = 'PDFを作成中…';
+    call('completeLot', { lotId: doneLot.lotId, devId: DEV_ID }).then(function(r) {
+      $('dlgDone').close(); homeMsg(doneResultText(r), r.mailError ? 'err' : 'ok');
+      return loadHome();
+    }).catch(function(e) {
+      $('dlgMsg').className = 'msg err'; $('dlgMsg').textContent = errText(e);
+    }).then(function() { btn.disabled = false; });
+  };
+
+  // ---------- 入力画面 ----------
+  function showEntry() {
+    $('home').classList.add('hidden'); $('entry').classList.remove('hidden'); $('btnHome').classList.remove('hidden');
+    // 表示するロット: 前に見ていたもの → 選んでいる機種の最初のロット → 全体の最初
+    if (!S.viewLotId || !lotById(S.viewLotId) || (kindFilter && (lotById(S.viewLotId).kind || 'その他') !== kindFilter)) {
+      const first = S.lots.filter(function(l) { return !kindFilter || (l.kind || 'その他') === kindFilter; })[0] || S.lots[0];
+      S.viewLotId = first.lotId;
+    }
+    S.numDigits = computeNumDigits();
+    window.scrollTo(0, 0);
+    if (document.activeElement) document.activeElement.blur();
+    resetEntry('容器番号を入力', 'info');
+  }
+
+  function resetEntry(msg, kind) {
+    S.stage = 'num'; S.ng = false; S.bufNum = ''; S.bufActual = ''; S.bufMass = '';
+    S.target = null; S.confirmDup = false; S.confirmMassText = null; S.ngFrom = ''; S.fullMass = false;
+    S.overwrite = ''; S.seal = false; S.dateOk = false; S.missNext = false;
+    setNotice(msg || '容器番号を入力', kind || 'info');
+    render();
+  }
+
+  function setNotice(text, kind) { const n = $('notice'); n.textContent = text; n.className = 'notice ' + kind; }
+
+  // 入力された番号から、どのロットのどの容器かを決める。
+  // 3桁以下は下3桁として扱い（「23」= 023）、4桁以上は末尾の桁で照合する。
+  function resolve(text) {
+    let len = Math.max(3, text.length);
+    let n = Number(text);
+    if (text === '1000') { n = 0; len = 3; } // 1000番目は「000」
+    const mod = Math.pow(10, len);
+    const key = n % mod;
+    const hits = [];
+    S.lots.forEach(function(l) {
+      for (let v = Number(l.start); v <= Number(l.end); v++) {
+        if (v % mod === key) hits.push({ lot: l, serial: pad(v, l.start.length) });
+      }
+    });
+    return hits;
+  }
+
+  // 入力中の全ロットで番号が重ならない最小の下桁数（3〜6）
+  function computeNumDigits() {
+    let total = 0;
+    S.lots.forEach(function(l) { total += lotSize(l); });
+    for (let len = 3; len <= 6; len++) {
+      const mod = Math.pow(10, len), seen = {};
+      let ok = true;
+      S.lots.forEach(function(l) {
+        for (let v = Number(l.start); ok && v <= Number(l.end); v++) {
+          if (seen[v % mod]) ok = false; else seen[v % mod] = true;
+        }
+      });
+      if (ok) return len;
+    }
+    return 6;
+  }
+
+  // 1桁入力の範囲: 標準値±0.5kg（10通り）。小数第1位の数字1つで値が1つに決まる。標準がまだなければ null
+  function shortWindow(lot) {
+    if (!S.auto || !S.short || S.fullMass) return null;
+    return massWindow(lot, false);
+  }
+
+  // 真ん中にする値: 実際の中央値（5本以上）→ そのロットで最後に入れた値 → 容器区分のいつもの値
+  function baseMass(lot) {
+    const med = median(lot);
+    if (med !== null) return med;
+    if (lot.lotId in S.lastByLot) return S.lastByLot[lot.lotId];
+    const vals = Object.keys(lot.entries).map(function(k) { return lot.entries[k]; }).filter(isMass);
+    if (vals.length) return vals[vals.length - 1];
+    return S.typical[lot.kind] || null;
+  }
+
+  // 標準値±0.5kgの10通り（候補ボタン・1桁入力の共通）
+  // allowGuess=false: 実際の中央値があるときだけ（1桁入力用）。true: いつもの値なども使う（ボタン用。値が見えるので安全）
+  function massWindow(lot, allowGuess) {
+    const med = allowGuess ? baseMass(lot) : median(lot);
+    if (med === null) return null;
+    const lo = Math.round(med * 10) - 5;
+    return {
+      lo: lo / 10, hi: (lo + 9) / 10,
+      value: function(d) { for (let t = lo; t <= lo + 9; t++) if (t % 10 === d) return t / 10; return null; }
+    };
+  }
+
+  // 質量の入力桁数（小数点なし）: そのロットの標準が10kg以上なら3桁（34.8）、未満なら2桁（6.8）。決められなければ0（Enterで確定）
+  function massDigitsFor(lot) {
+    const med = median(lot);
+    if (med !== null) return med >= 10 ? 3 : 2;
+    const kg = parseInt(lot.kind, 10);
+    if (!kg) return 0;
+    return kg >= 10 ? 3 : 2;
+  }
+
+  function median(lot) {
+    const arr = Object.keys(lot.entries).map(function(k) { return lot.entries[k]; })
+      .filter(isMass).sort(function(a, b) { return a - b; });
+    if (arr.length < 5) return null;
+    const h = Math.floor(arr.length / 2);
+    return arr.length % 2 ? arr[h] : (arr[h - 1] + arr[h]) / 2;
+  }
+
+  function parseMass(text) {
+    if (!/^\d+(\.\d?)?$|^\.\d$/.test(text)) return NaN;
+    if (text.indexOf('.') >= 0) return Math.round(parseFloat(text) * 10) / 10;
+    if (text.length === 1) return NaN;
+    return Number(text) / 10;
+  }
+
+  function handleKey(k) {
+    if (S.stage === 'undo') return handleUndoKey(k);
+    if (k === '*') return askUndo();
+    if (k === 'Escape') return resetEntry('やり直します。容器番号を入力', 'info');
+
+    if (S.stage === 'num') {
+      if (/^\d$/.test(k)) {
+        if (S.bufNum.length < 8) S.bufNum += k;
+        S.confirmDup = false;
+        if (S.auto && S.bufNum.length === S.numDigits) return submitNum();
+      }
+      else if (k === 'Backspace') { S.bufNum = S.bufNum.slice(0, -1); S.confirmDup = false; }
+      else if (k === 'Enter') { if (S.bufNum) { if (S.confirmDup) S.overwrite = 'fix'; return submitNum(); } return; }
+      else if (k === '+' && S.confirmDup) { S.overwrite = 'dup'; return submitNum(); }
+      else if (k === '/') { S.ng = !S.ng; }
+      // 欠番: 番号を入れてから「－」、または「－」を押してから番号（底黒は質量の欄がないのでここで決める）
+      else if (k === '-') {
+        if (S.bufNum) { S.missNext = true; return submitNum(); }
+        S.missNext = !S.missNext;
+        setNotice(S.missNext ? '欠番: 欠番にする容器番号を入力' : '容器番号を入力', S.missNext ? 'warn' : 'info');
+      }
+      render(); return;
+    }
+    if (S.stage === 'actual') {
+      if (/^\d$/.test(k)) {
+        if (S.bufActual.length < 8) S.bufActual += k;
+        S.confirmDup = false;
+        if (S.auto && S.bufActual.length === S.numDigits) return submitActual();
+      }
+      else if (k === 'Backspace') {
+        if (!S.bufActual) { S.stage = 'num'; S.ng = false; S.target = null; setNotice('容器番号を入力', 'info'); }
+        else S.bufActual = S.bufActual.slice(0, -1);
+      }
+      else if (k === '/') { S.ng = false; S.bufActual = ''; S.ngFrom = ''; S.confirmDup = false; return goMass(S.target); }
+      else if (k === 'Enter') { if (S.confirmDup) S.overwrite = 'fix'; return submitActual(); }
+      else if (k === '+' && S.confirmDup) { S.overwrite = 'dup'; return submitActual(); }
+      render(); return;
+    }
+    if (S.stage === 'mass') {
+      // 製造年月を目視で確認して OK を押すまで、質量は入れられない（Enter = 製造年月OK）
+      if (dateLocked()) {
+        if (k === 'Enter') { S.dateOk = true; setNotice('製造年月OK。質量を入力', 'info'); render(); return; }
+        if (/^\d$/.test(k) || k === '.' || k === '+') { dateOkFirst(); return; }
+      }
+      if (/^\d$/.test(k) || k === '.') {
+        if (S.bufMass === MISSING || S.bufMass === REPAIR) S.bufMass = '';
+        const win = shortWindow(S.target.lot);
+        if (win && S.bufMass === '') {
+          if (k === '.') { S.fullMass = true; setNotice('範囲外の質量: 3桁で入力（例 353→35.3）', 'warn'); render(); return; }
+          S.bufMass = win.value(Number(k)).toFixed(1);
+          return submitMass();
+        }
+        if (k === '.' && S.bufMass.indexOf('.') >= 0) return;
+        if (S.bufMass.length < 5) S.bufMass += k;
+        S.confirmMassText = null;
+        if (S.auto) {
+          const d = massDigitsFor(S.target.lot);
+          if (/\.\d$/.test(S.bufMass) || (d && S.bufMass.indexOf('.') < 0 && S.bufMass.length === d)) return submitMass();
+        }
+      } else if (k === 'Backspace') {
+        if (!S.bufMass) { backToNum(); }
+        else { S.bufMass = S.bufMass === MISSING || S.bufMass === REPAIR ? '' : S.bufMass.slice(0, -1); S.confirmMassText = null; }
+      } else if (k === '+') {
+        // 前回と同じ = このロットで最後に入れた値（なければ中央値・標準質量）。別の機種のロットの値は使わない
+        const same = stepBase(S.target.lot);
+        if (same === null) { setNotice('このロットの前回の質量がまだありません', 'warn'); beep(false); }
+        else { S.bufMass = String(same.toFixed(1)); S.confirmMassText = null; return submitMass(); }
+      } else if (k === '-') {
+        S.bufMass = MISSING; setNotice('欠番として記録します。Enter で保存', 'warn');
+      } else if (k === '/') {
+        S.ng = !S.ng;
+        if (S.ng) { S.ngFrom = label(S.target.lot, S.target.serial); S.confirmDup = false; S.stage = 'actual'; S.bufActual = ''; setNotice('NG: 刻印の実容器番号を入力', 'err'); }
+        else { delete S.target.ngInput; S.ngFrom = ''; }
+      } else if (k === 'Enter') { if (S.bufMass) return submitMass(); return; }
+      render(); return;
+    }
+  }
+
+  // 質量バーの×: 質量を入れずに閉じて容器番号の入力に戻る
+  document.getElementById('btnSheetClose').onclick = function() { resetEntry('閉じました。容器番号を入力', 'info'); };
+
+  function backToNum() {
+    S.stage = 'num'; S.target = null; S.ng = false; S.bufActual = ''; S.confirmDup = false;
+    setNotice('容器番号を入力', 'info');
+  }
+
+  function pickTarget(text, onOk) {
+    if (!text) { setNotice('番号を入力してください', 'warn'); beep(false); render(); return; }
+    const hits = resolve(text);
+    if (!hits.length) {
+      setNotice('「' + text + '」はどのロットの範囲にもありません。番号を確認してください', 'err'); beep(false); render(); return;
+    }
+    if (hits.length > 1) {
+      setNotice('複数のロットに該当します（' + hits.map(function(h) { return label(h.lot, h.serial); }).join('、') +
+        '）。4桁以上で入力してください', 'err');
+      beep(false); render(); return;
+    }
+    onOk(hits[0]);
+  }
+
+  function submitNum() {
+    pickTarget(S.bufNum, function(hit) {
+      if (S.ng) {
+        S.target = hit; S.ngFrom = label(hit.lot, hit.serial); S.stage = 'actual'; S.bufActual = '';
+        setNotice('NG: 刻印の実容器番号を入力', 'err'); render(); return;
+      }
+      goMass(hit);
+    });
+  }
+
+  function submitActual() {
+    pickTarget(S.bufActual, function(hit) {
+      goMass({ lot: hit.lot, serial: hit.serial, ngInput: S.ngFrom });
+    });
+  }
+
+  function goMass(hit) {
+    const lk = lockedBy(hit.lot);
+    if (lk) {
+      S.viewLotId = hit.lot.lotId; beep(false);
+      resetEntry('🔒 ' + label(hit.lot, hit.serial) + ' のロットは ' + lockText(lk) + ' が入力中のため見るだけです → 次の容器番号', 'err');
+      return;
+    }
+    const prev = hit.lot.entries[hit.serial];
+    if (hit.lot.spec === SOKO) return S.missNext ? markSokoMissing(hit, prev) : markCircle(hit, prev);
+    // 入力済みの容器でも警告は出さずに入力バーを開く（ダブりはバーの「ダブり」、入力ミスは質量を入れ直して訂正）
+    S.target = hit; S.confirmDup = false;
+    S.stage = 'mass'; S.bufMass = ''; S.confirmMassText = null; S.viewLotId = hit.lot.lotId; S.fullMass = false;
+    S.dateOk = false;
+    if (prev === undefined) S.overwrite = '';
+    else if (!S.overwrite) S.overwrite = 'fix';
+    // ダブり（2回流れてきた）は同じ容器なのでWも前と同じ。入れ直さずにそのまま記録する
+    if (S.overwrite === 'dup' && isMass(prev)) { S.bufMass = prev.toFixed(1); S.confirmMassText = null; return submitMass(); }
+    if (S.missNext) { S.missNext = false; S.bufMass = MISSING; setNotice('欠番として記録します。Enter で保存', 'warn'); render(); return; }
+    setNotice(prev === undefined ? '質量を入力' : label(hit.lot, hit.serial) + ' は入力済み（' + fmtMass(prev) + '）。2回流れたなら「ダブり」、直すなら質量を入力', 'info');
+    render();
+  }
+
+  // 底黒（再搬入）: 番号が決まったらその場で質量欄に〇を付ける
+  function markCircle(hit, prev) {
+    S.viewLotId = hit.lot.lotId;
+    if (prev === CIRCLE) {
+      resetEntry('〇済み: ' + label(hit.lot, hit.serial) + ' はもう〇が付いています → 次の容器番号', 'warn');
+      beep(false); return;
+    }
+    enqueue({ lotId: hit.lot.lotId, serial: hit.serial, mass: null, worker: worker(), device: $('fDevice').value.trim() });
+    hit.lot.entries[hit.serial] = CIRCLE;
+    S.localOps.push({ lotId: hit.lot.lotId, serial: hit.serial, mass: CIRCLE, t: Date.now() });
+    S.lastKey = hit.lot.lotId + '|' + hit.serial;
+    beep(true);
+    resetEntry('〇: ' + label(hit.lot, hit.serial) + '（底黒）→ 次の容器番号', 'ok');
+  }
+
+  // 底黒の欠番: 〇の代わりに欠番を記録（〇を付けたあとなら欠番に直す）
+  function markSokoMissing(hit, prev) {
+    S.viewLotId = hit.lot.lotId;
+    if (prev === MISSING) { resetEntry('欠番済み: ' + label(hit.lot, hit.serial) + ' はもう欠番です → 次の容器番号', 'warn'); beep(false); return; }
+    enqueue({ lotId: hit.lot.lotId, serial: hit.serial, mass: null, missing: true, worker: worker(), device: $('fDevice').value.trim(),
+      overwrite: prev === undefined ? '' : 'fix' });
+    hit.lot.entries[hit.serial] = MISSING;
+    S.localOps.push({ lotId: hit.lot.lotId, serial: hit.serial, mass: MISSING, t: Date.now() });
+    S.lastKey = hit.lot.lotId + '|' + hit.serial;
+    beep(true);
+    resetEntry('欠番: ' + label(hit.lot, hit.serial) + '（底黒）→ 次の容器番号', 'ok');
+  }
+
+  function submitMass() {
+    const t = S.target;
+    let mass;
+    if (S.bufMass === MISSING || S.bufMass === REPAIR) {
+      mass = S.bufMass;
+    } else {
+      mass = parseMass(S.bufMass);
+      if (!(mass >= MASS_MIN && mass <= MASS_MAX)) {
+        setNotice('質量は ' + MASS_MIN + '〜' + MASS_MAX + ' kg で入力してください', 'err'); beep(false); render(); return;
+      }
+      const med = median(t.lot);
+      if (med !== null && Math.abs(mass - med) > DEVIATION_KG + 1e-9 && S.confirmMassText !== S.bufMass) {
+        S.confirmMassText = S.bufMass;
+        setNotice(fmtMass(mass) + ' はこのロットの標準（' + fmtMass(med) + '）から離れています。刻印を再確認して、正しければ Enter', 'warn');
+        beep(false); render(); return;
+      }
+      // 中央値がまだない（入れ始め）ときは、容器区分の標準質量から大きく外れていないか見る（別機種の値の入れ間違い防止）
+      const typ = S.typical[t.lot.kind];
+      if (med === null && typ && Math.abs(mass - typ) > TYPICAL_DEVIATION_KG + 1e-9 && S.confirmMassText !== S.bufMass) {
+        S.confirmMassText = S.bufMass;
+        setNotice(fmtMass(mass) + ' は ' + t.lot.kind + ' の標準（' + fmtMass(typ) + '）から大きく離れています。機種と刻印を確認して、正しければ Enter', 'warn');
+        beep(false); render(); return;
+      }
+    }
+    enqueue({ lotId: t.lot.lotId, serial: t.serial, mass: isMass(mass) ? mass : null,
+      missing: mass === MISSING, repair: mass === REPAIR, ngInput: t.ngInput || '', worker: worker(), device: $('fDevice').value.trim(),
+      overwrite: S.overwrite, seal: S.seal });
+    t.lot.entries[t.serial] = mass;
+    S.localOps.push({ lotId: t.lot.lotId, serial: t.serial, mass: mass, t: Date.now() });
+    if (isMass(mass)) { S.lastMass = mass; S.lastByLot[t.lot.lotId] = mass; }
+    S.lastKey = t.lot.lotId + '|' + t.serial;
+    beep(true);
+    const tag = (S.overwrite === 'dup' ? '【ダブり】' : S.overwrite === 'fix' ? '【訂正】' : '') + (S.seal ? '【シール違い】' : '');
+    resetEntry('保存: ' + tag + label(t.lot, t.serial) + '　' + fmtMass(mass) + '　→ 次の容器番号', 'ok');
+  }
+
+  // ---------- 送信キュー（入力を止めずに順番に保存） ----------
+  let seq = 0;
+  // 送っていない入力はiPadにも残す（画面を閉じても・読み込み直しても消えない。開き直すと続きを送る。11/4 に10:34から送れずに約700本が消えた）
+  const QUEUE_KEY = 'lpg.queue';
+  function saveQueue() {
+    try { if (S.queue.length) localStorage.setItem(QUEUE_KEY, JSON.stringify(S.queue)); else localStorage.removeItem(QUEUE_KEY); } catch (e) { /* 残せなくても送信は続く */ }
+  }
+  function restoreQueue() {
+    let q = [];
+    try { q = JSON.parse(localStorage.getItem(QUEUE_KEY) || '[]'); } catch (e) { q = []; }
+    if (!Array.isArray(q) || !q.length) return;
+    q.forEach(function(e) {
+      if (!e || !e.lotId || !e.clientId) return;
+      const key = e.lotId + '|' + e.serial;
+      S.pending[key] = (S.pending[key] || 0) + 1;
+      S.queue.push(e);
+    });
+    setNotice('前回送れていない入力 ' + S.queue.length + ' 本を送ります', 'warn');
+    pump();
+  }
+  // このiPadの入力の控え（新しい1500本）。サーバーに届いたかどうかも付ける。何かあってもここから送り直せる
+  const DEVLOG_KEY = 'lpg.devlog', DEVLOG_MAX = 1500;
+  let devlog = [];
+  try { devlog = JSON.parse(localStorage.getItem(DEVLOG_KEY) || '[]'); if (!Array.isArray(devlog)) devlog = []; } catch (e) { devlog = []; }
+  let devlogTimer = null;
+  function saveDevlog() {
+    clearTimeout(devlogTimer);
+    devlogTimer = setTimeout(function() { try { localStorage.setItem(DEVLOG_KEY, JSON.stringify(devlog)); } catch (e) { /* 残せなくても入力は続く */ } }, 300);
+  }
+  function devlogAdd(e) {
+    devlog.push({ e: e, t: Date.now(), ok: 0 });
+    if (devlog.length > DEVLOG_MAX) devlog.splice(0, devlog.length - DEVLOG_MAX);
+    saveDevlog();
+  }
+  function devlogSaved(clientId) {
+    for (let i = devlog.length - 1; i >= 0 && i >= devlog.length - 300; i--) if (devlog[i].e.clientId === clientId) { devlog[i].ok = 1; break; }
+    saveDevlog();
+  }
+  // 送信エラーの記録（このiPadの中・新しい500件）。電波切れなどサーバーに届かなかったエラーも残る
+  const ERRLOG_KEY = 'lpg.errlog', ERRLOG_MAX = 500;
+  let errlogMem = [];   // 保存できない（プライベートブラウズなど）ときはこの画面の間だけ持つ
+  function errlogAdd(msg) {
+    try {
+      const list = errlogList();
+      const e = S.queue[0];
+      list.push({ t: Date.now(), msg: String(msg || ''), lot: e ? e.lotId : '', serial: e ? e.serial : '', waiting: S.queue.length,
+        worker: worker(), device: $('fDevice').value.trim(), online: navigator.onLine ? 1 : 0 });
+      if (list.length > ERRLOG_MAX) list.splice(0, list.length - ERRLOG_MAX);
+      errlogMem = list;
+      try { localStorage.setItem(ERRLOG_KEY, JSON.stringify(list)); } catch (e) { /* 画面の間は errlogMem に残る */ }
+    } catch (e) { /* 残せなくても入力は続く */ }
+  }
+  function errlogList() {
+    try { const l = JSON.parse(localStorage.getItem(ERRLOG_KEY) || '[]'); return Array.isArray(l) ? l : errlogMem.slice(); } catch (e) { return errlogMem.slice(); }
+  }
+  window.__lpgErrlog = function() { return errlogList(); };
+  function enqueue(entry) {
+    entry.clientId = DEV_ID + '-' + Date.now().toString(36) + '-' + (++seq);   // 端末をまたいでも重ならない（サーバーで二重送信を見分ける）
+    entry.devId = DEV_ID;
+    S.claims[entry.lotId] = { worker: entry.worker || '', device: entry.device || '', mine: true };
+    S.claims['*'] = { worker: entry.worker || '', device: entry.device || '', mine: true };
+    const key = entry.lotId + '|' + entry.serial;
+    S.pending[key] = (S.pending[key] || 0) + 1;
+    delete S.errors[key];
+    S.queue.push(entry);
+    devlogAdd(entry);
+    saveQueue();
+    pump();
+  }
+
+  // 送信の見張り: iPadがスリープしたり電波が途切れたりすると、送信の返事が戻らず止まることがある（10/21に午前の入力が届かなかった）。
+  // 30秒返事がなければ送り直す（同じ入力が2回届いてもサーバーが見分ける）。3回だめなら赤く出して「再送」を待つ
+  const SEND_TIMEOUT_MS = window.__sendTimeoutMs || 30000;
+  let sendSeq = 0, sendTimer = null, sendStarted = 0, sendTimeouts = 0;
+  function sendTimedOut(tok) {
+    if (tok !== sendSeq || !S.sending) return;
+    sendSeq++; S.sending = false; clearTimeout(sendTimer);
+    sendTimeouts++;
+    errlogAdd('返事なし（' + Math.round((Date.now() - sendStarted) / 1000) + '秒）' + (sendTimeouts < 3 ? '・送り直し' : ''));
+    if (sendTimeouts < 3) { renderQueue(); pump(); return; }
+    sendTimeouts = 0;
+    const e = S.queue[0];
+    S.sendError = '通信の返事がありません（電波・スリープ）。30秒ごとに自動で送り直します';
+    if (e) S.errors[e.lotId + '|' + e.serial] = true;
+    if (!autoRetrying) beep(false);   // 自動の送り直しが続けて失敗しても、ブザーは最初の1回だけ
+    autoRetryLater();
+    render(); renderQueue();
+  }
+  // 画面に戻ったとき（スリープから復帰）、止まっている送信があればすぐ送り直す
+  document.addEventListener('visibilitychange', function() {
+    if (document.visibilityState === 'visible' && S.sending && Date.now() - sendStarted > 5000) sendTimedOut(sendSeq);
+    else if (document.visibilityState === 'visible') pump();
+  });
+  setInterval(function() { if (S.sending && Date.now() - sendStarted > SEND_TIMEOUT_MS) sendTimedOut(sendSeq); else pump(); }, 15000);
+
+  function pump() {
+    renderQueue();
+    if (S.sending || !S.queue.length || S.sendError) return;
+    S.sending = true;
+    const tok = ++sendSeq;
+    sendStarted = Date.now();
+    clearTimeout(sendTimer);
+    sendTimer = setTimeout(function() { sendTimedOut(tok); }, SEND_TIMEOUT_MS);
+    // たまっている分はまとめて1回で送る（通信の待ち時間を1本ずつ払わない）
+    const batch = S.queue.slice(0, 20);
+    const done1 = function(e, res) {
+      const key = e.lotId + '|' + e.serial;
+      S.queue.shift();
+      saveQueue();
+      if (res.recordId || res.duplicateSend || res.already) devlogSaved(e.clientId);
+      S.pending[key]--; if (!S.pending[key]) delete S.pending[key];
+      delete S.errors[key];   // 送り直して保存できたら赤を消す
+      if (res.recordId) S.saved.push({ recordId: res.recordId, lotId: e.lotId, serial: e.serial, mass: res.mass });
+      if (S.saved.length > 50) S.saved.shift();
+      const ml = lotById(e.lotId);
+      if (ml) {
+        const mk = ml.prefix + e.serial;
+        const bump = function(name) { ml[name] = ml[name] || {}; ml[name][mk] = (ml[name][mk] || 0) + 1; };
+        if (res.kind === 'ダブり') bump('dups');
+        if (res.note === 'シール違い') bump('seals');
+      }
+      if (res.full) onLotFull(e.lotId, res);
+    };
+    const fail = function(msg) {
+      errlogAdd(msg);
+      const e = S.queue[0];
+      S.sendError = msg;
+      if (e) S.errors[e.lotId + '|' + e.serial] = true;
+      if (!autoRetrying) beep(false);
+    };
+    call('recordEntries', batch).then(function(out) {
+      if (tok !== sendSeq) return;   // 見張りで送り直した後に届いた古い返事は使わない（送り直した方の返事を使う）
+      clearTimeout(sendTimer); sendTimeouts = 0; autoRetrying = false;
+      S.sending = false;
+      (out.results || []).forEach(function(res, i) { done1(batch[i], res); });
+      if (out.error) {
+        fail(out.error);
+        // サーバーが断った入力（完了済み・見るだけ・範囲外など）は人が決める。Googleの一時的なエラー（接続できない・時間切れ）は自動で送り直す（11/4 10:34 に止まったまま5時間たまった）
+        if (!REFUSED_RE.test(out.error)) autoRetryLater();
+      }
+      render(); renderQueue();
+      if (!out.error) pump();
+    }).catch(function(err) {
+      if (tok !== sendSeq) return;
+      clearTimeout(sendTimer);
+      S.sending = false;
+      fail(errText(err));
+      autoRetryLater();   // 通信エラー（電波など）は自動で送り直す。サーバーが断った入力（完了済みなど）は人が決める
+      render(); renderQueue();
+    });
+  }
+
+  // ロットの全数がそろったとき
+  function onLotFull(lotId, res) {
+    const l = lotById(lotId);
+    const name = l ? l.prefix + l.start + '～' + l.end : lotId;
+    if (res.completed) {
+      S.lots = S.lots.filter(function(x) { return x.lotId !== lotId; });
+      if (S.viewLotId === lotId && S.lots.length) S.viewLotId = S.lots[0].lotId;
+      setNotice('★ ' + name + ' 全数そろいました。完了にして成績表PDFを作成しました（メールは「まとめてメール送信」で送ります）' +
+        (res.mailError ? '（メール送信失敗: ' + res.mailError + '）' : ''), res.mailError ? 'err' : 'ok');
+      if (!S.lots.length) setTimeout(function() { $('btnHome').click(); }, 2500);
+    } else {
+      setNotice('★ ' + name + ' 全数そろいました。ロット一覧から完了にしてください', 'ok');
+    }
+    beep(true); setTimeout(function() { beep(true); }, 150);
+  }
+
+  const REFUSED_RE = /完了済み|見るだけ|範囲外|質量は|見つかりません|削除/;
+  function retry() { clearTimeout(autoRetryTimer); autoRetrying = false; S.sendError = null; pump(); }
+  // 通信で止まったときは、人が「再送」を押さなくても少し待って送り直す（10/22 昼に1時間止まって190件たまった）
+  let autoRetryTimer = null, autoRetrying = false;
+  function autoRetryLater() {
+    clearTimeout(autoRetryTimer);
+    const err = S.sendError;
+    autoRetryTimer = setTimeout(function() { if (S.sendError && S.sendError === err) { retry(); autoRetrying = true; } }, SEND_TIMEOUT_MS);
+  }
+  function dropFailed() {
+    const e = S.queue.shift();
+    saveQueue();
+    const key = e.lotId + '|' + e.serial;
+    S.pending[key]--; if (!S.pending[key]) delete S.pending[key];
+    delete S.errors[key];
+    S.sendError = null; clearTimeout(autoRetryTimer);
+    call('getLot', e.lotId).then(function(l) { const cur = lotById(l.lotId); if (cur) cur.entries = l.entries; render(); });
+    pump();
+  }
+
+  function renderQueue() {
+    const q = $('queue');
+    if (S.sendError) {
+      q.className = 'queue err';
+      q.innerHTML = '';
+      q.appendChild(document.createTextNode('保存に失敗: ' + S.sendError + '　'));
+      const b1 = document.createElement('button'); b1.className = 'btn'; b1.textContent = '再送'; b1.tabIndex = -1; b1.onclick = retry;
+      const b2 = document.createElement('button'); b2.className = 'btn sec'; b2.textContent = 'この入力を破棄'; b2.tabIndex = -1; b2.onclick = dropFailed;
+      q.appendChild(b1); q.appendChild(document.createTextNode(' ')); q.appendChild(b2);
+    } else {
+      q.className = 'queue';
+      q.textContent = S.queue.length ? '送信中 ' + S.queue.length + ' 件…' : 'すべて保存済み';
+    }
+  }
+
+  // ---------- 取り消し ----------
+  // 直前の入力を取り消す（確認なしですぐ取り消す。＊キー・取消ボタン）
+  function askUndo() {
+    if (S.queue.length) { setNotice('送信が終わってから取り消してください（送信中 ' + S.queue.length + ' 件）', 'warn'); beep(false); render(); return; }
+    const last = S.saved[S.saved.length - 1];
+    if (!last) { setNotice('取り消せる入力がありません', 'warn'); beep(false); render(); return; }
+    S.stage = 'undo';
+    handleUndoKey('Enter');
+  }
+
+  function handleUndoKey(k) {
+    if (k === 'Enter') {
+      const last = S.saved.pop();
+      setNotice('取り消し中…', 'info');
+      call('undoEntry', last.recordId).then(function(r) {
+        const l = lotById(r.lotId);
+        if (l) { if (r.mass === null) delete l.entries[r.serial]; else l.entries[r.serial] = r.mass; }
+        S.localOps = S.localOps.filter(function(op) { return !(op.lotId === r.lotId && String(op.serial) === String(r.serial)); });
+        call('getLot', r.lotId).then(function(fresh) { const cur = lotById(fresh.lotId); if (cur) { cur.entries = fresh.entries; cur.dups = fresh.dups; cur.seals = fresh.seals; render(); } });
+        S.lastKey = null;
+        resetEntry('取り消しました: ' + (l ? label(l, r.serial) : r.serial) + '。容器番号を入力', 'ok');
+      }).catch(function(e) {
+        S.saved.push(last);
+        resetEntry('取り消しに失敗: ' + errText(e), 'err'); beep(false);
+      });
+    } else if (k === 'Backspace' || k === 'Escape') {
+      resetEntry('取り消しをやめました。容器番号を入力', 'info');
+    }
+  }
+
+  // ---------- 描画 ----------
+  function render() {
+    // 入力の途中で桁数が減ると打ち慣れた桁数で誤って確定するので、入力画面を開いている間は増えるときだけ変える
+    S.numDigits = Math.max(S.numDigits, computeNumDigits());
+    $('numHint').textContent = S.auto ? '下' + S.numDigits + '桁を入力（Enter不要）' : '下3桁でOK・Enterで確定';
+    const md = S.target ? massDigitsFor(S.target.lot) : 0;
+    const win = S.target ? shortWindow(S.target.lot) : null;
+    $('massHint').textContent = win ? '1桁で保存（W' + win.lo.toFixed(1) + '〜' + win.hi.toFixed(1) + '）範囲外は「.」→3桁'
+      : S.auto && md ? md + '桁で自動保存（' + (md === 3 ? '348→W34.8' : '68→W6.8') + '）' : '「68」→6.8 と入力して Enter';
+    const cur = '<span class="cursor"></span>';
+    $('valNum').innerHTML = esc(S.bufNum) + (S.stage === 'num' ? cur : '');
+    $('valActual').innerHTML = esc(S.bufActual) + (S.stage === 'actual' ? cur : '');
+    $('valMass').innerHTML = esc(S.bufMass) + (S.stage === 'mass' ? cur : '');
+    $('fldNum').classList.toggle('active', S.stage === 'num');
+    $('fldActual').classList.toggle('active', S.stage === 'actual');
+    $('fldActual').classList.toggle('hidden', !S.ng);
+    $('fldMass').classList.toggle('active', S.stage === 'mass');
+    $('btnOk').classList.toggle('on', !S.ng);
+    $('btnNg').classList.toggle('on', S.ng);
+    const t = S.target;
+    $('resolved').textContent = t ? '→ ' + label(t.lot, t.serial) + '（' + t.lot.sheetName + '）' : '';
+    $('dupChoice').classList.toggle('hidden', !S.confirmDup || (S.stage !== 'num' && S.stage !== 'actual'));
+    const sheetOpen = S.stage === 'mass';
+    $('btnDateOk').classList.toggle('hidden', !S.needDateOk);
+    $('btnDateOk').classList.toggle('done', !!S.dateOk);
+    $('btnDateOk').innerHTML = S.dateOk ? '✓ 製造年月 OK' : '製造年月 OK<small>目視で確認したら押す（Enter）</small>';
+    $('massSheet').classList.toggle('locked', dateLocked());
+    $('massSheet').classList.toggle('open', sheetOpen);
+    // 容器番号は大きく: 記号は小さめ、下3桁（表のマスの番号）を特に大きく
+    if (sheetOpen && S.target) {
+      const tl = S.target.lot, sn = String(S.target.serial), cut = Math.max(0, sn.length - 3);
+      $('sheetTitle').innerHTML = '<span class="st-num">' + (tl.prefix ? '<span class="st-pre">' + esc(tl.prefix) + '</span>' : '') +
+        esc(sn.slice(0, cut)) + '<span class="st-last">' + esc(sn.slice(cut)) + '</span></span>' +
+        '<span class="st-w">の W' + (tl.entries[S.target.serial] !== undefined ? '（前は ' + esc(fmtMass(tl.entries[S.target.serial])) + '）' : '') + '</span>';
+    } else $('sheetTitle').textContent = '';
+    placeSheet();
+    $('btnSeal').classList.toggle('on', S.seal);
+    const canClear = sheetOpen && S.target && S.target.lot.entries[S.target.serial] !== undefined;
+    $('btnClear').classList.toggle('hidden', !canClear);
+    // ダブり: 入力済みの容器がもう一度流れてきたとき、前と同じWでそのまま記録（未入力の容器では押せない）
+    const prevW = sheetOpen && S.target ? S.target.lot.entries[S.target.serial] : undefined;
+    $('btnDupMass').disabled = !isMass(prevW);
+    $('btnDupMass').innerHTML = isMass(prevW) ? 'ダブり<small style="display:block;font-weight:400;font-size:11px">前と同じ ' + esc(fmtMass(prevW)) + ' で記録</small>' : 'ダブり<small style="display:block;font-weight:400;font-size:11px">未入力の容器</small>';
+    // 直前の入力を取り消すボタン（番号入力中・取消の確認中に出す）
+    const lastSaved = S.saved[S.saved.length - 1];
+    const showUndo = !!lastSaved && (S.stage === 'num' || S.stage === 'undo') && !S.confirmDup;
+    $('btnUndo').classList.toggle('hidden', !showUndo);
+    if (showUndo) {
+      const ul = lotById(lastSaved.lotId);
+      $('btnUndo').innerHTML = '↶ 直前の入力を取り消す' +
+        '<small>' + esc((ul ? label(ul, lastSaved.serial) : lastSaved.serial) + '　' + fmtMass(lastSaved.mass)) + '</small>';
+    }
+    renderSteps(); renderCands(); renderTabs(); renderGrid();
+  }
+
+  function esc(s) { return String(s).replace(/[&<>]/g, function(c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]; }); }
+
+  // 入力バーを下の入力欄のすぐ上に置く（縦向きのとき）
+  function placeSheet() {
+    const top = $('inPanel').getBoundingClientRect().top;
+    document.documentElement.style.setProperty('--sheetBottom', Math.max(0, window.innerHeight - top + 6) + 'px');
+  }
+  window.addEventListener('resize', placeSheet);
+  window.addEventListener('scroll', placeSheet, { passive: true });
+
+  // 前回±0.1・前回と同じ のボタン。「前回」はそのロットで最後に入れた値（なければ標準値）
+  function stepBase(lot) {
+    if (lot.lotId in S.lastByLot) return S.lastByLot[lot.lotId];
+    return baseMass(lot);
+  }
+  function renderSteps() {
+    const box = $('steps');
+    const base = S.stage === 'mass' && S.target && S.bufMass === '' ? stepBase(S.target.lot) : null;
+    box.classList.toggle('hidden', base === null);
+    if (base === null) return;
+    Array.prototype.forEach.call(box.querySelectorAll('button'), function(b) {
+      const v = (Math.round(base * 10) + Number(b.getAttribute('data-delta'))) / 10;
+      b.querySelector('b').innerHTML = '<small class="w">W</small>' + v.toFixed(1);
+      b.setAttribute('data-mass', v.toFixed(1));
+    });
+  }
+  $('btnFix').onclick = function() { this.blur(); if (S.confirmDup) handleKey('Enter'); };
+  $('btnDup').onclick = function() { this.blur(); if (S.confirmDup) handleKey('+'); };
+  $('btnDupMass').onclick = function() {
+    this.blur();
+    if (S.stage !== 'mass' || !S.target) return;
+    const prev = S.target.lot.entries[S.target.serial];
+    if (!isMass(prev)) return;
+    S.overwrite = 'dup'; S.bufMass = prev.toFixed(1); S.confirmMassText = null;
+    submitMass();
+  };
+  $('btnUndo').onclick = function() {
+    this.blur();
+    if (S.stage !== 'undo') askUndo();
+  };
+  $('btnSeal').onclick = function() { this.blur(); if (S.stage === 'mass') { S.seal = !S.seal; render(); } };
+  // 修正（品質不良で修正に回す容器）: 質量なしでその場で保存
+  $('btnRepair').onclick = function() {
+    this.blur();
+    if (S.stage !== 'mass') return;
+    S.bufMass = REPAIR; S.confirmMassText = null;
+    submitMass();
+  };
+
+  // 入力ミスを消す（そのマスを空に戻す）
+  function clearEntryOf(lot, serial) {
+    const key = lot.lotId + '|' + serial;
+    if (S.pending[key]) { setNotice('保存中です。少し待ってからもう一度押してください', 'warn'); beep(false); render(); return; }
+    if (refuseLocked(lot)) return;
+    setNotice('消しています…', 'info'); render();
+    call('clearEntry', { lotId: lot.lotId, serial: serial, devId: DEV_ID }).then(function() {
+      delete lot.entries[serial];
+      if (lot.dups) delete lot.dups[label(lot, serial)];
+      if (lot.seals) delete lot.seals[label(lot, serial)];
+      S.localOps = S.localOps.filter(function(op) { return !(op.lotId === lot.lotId && String(op.serial) === String(serial)); });
+      S.saved = S.saved.filter(function(x) { return !(x.lotId === lot.lotId && String(x.serial) === String(serial)); });
+      if (S.lastKey === key) S.lastKey = null;
+      resetEntry('消しました: ' + label(lot, serial) + ' → 次の容器番号', 'ok');
+    }).catch(function(e) { setNotice(errText(e), 'err'); beep(false); render(); });
+  }
+  $('btnDel').onclick = function() {
+    this.blur();
+    if (S.confirmDup && S.target) clearEntryOf(S.target.lot, S.target.serial);
+  };
+  $('btnClear').onclick = function() {
+    this.blur();
+    if (S.stage === 'mass' && S.target) clearEntryOf(S.target.lot, S.target.serial);
+  };
+
+  // 製造年月OKがまだ（必須にしているとき）
+  function dateLocked() { return S.needDateOk && S.stage === 'mass' && !S.dateOk; }
+  function dateOkFirst() { setNotice('先に容器の製造年月を確認して「製造年月 OK」を押してください（Enter）', 'warn'); beep(false); render(); }
+  $('btnDateOk').onclick = function() {
+    this.blur();
+    if (S.stage !== 'mass') return;
+    S.dateOk = true; setNotice('製造年月OK。質量を入力', 'info'); render();
+  };
+  $('steps').addEventListener('click', function(ev) {
+    const b = ev.target.closest('button'); if (!b) return;
+    b.blur();
+    if (S.stage !== 'mass') return;
+    if (dateLocked()) return dateOkFirst();
+    S.bufMass = b.getAttribute('data-mass'); S.confirmMassText = null;
+    submitMass();
+  });
+
+  // 質量の候補ボタン（標準±0.5kgの10個）。よく出る値ほど濃い色
+  function renderCands() {
+    const box = $('cands');
+    const win = S.stage === 'mass' && S.target && S.bufMass === '' ? massWindow(S.target.lot, true) : null;
+    box.classList.toggle('hidden', !win);
+    $('candsNote').classList.toggle('hidden', !win);
+    if (!win) { box.innerHTML = ''; return; }
+    const freq = {};
+    Object.keys(S.target.lot.entries).forEach(function(k) {
+      const m = S.target.lot.entries[k];
+      if (isMass(m)) freq[m.toFixed(1)] = (freq[m.toFixed(1)] || 0) + 1;
+    });
+    const ranked = Object.keys(freq).sort(function(a, b) { return freq[b] - freq[a]; });
+    box.innerHTML = '';
+    for (let t = Math.round(win.lo * 10); t <= Math.round(win.hi * 10); t++) {
+      const v = (t / 10).toFixed(1);
+      const b = document.createElement('button');
+      b.innerHTML = '<small class="w">W</small>' + v; b.tabIndex = -1; b.setAttribute('data-mass', v);
+      const rank = ranked.indexOf(v);
+      if (rank === 0) b.className = 'freq1'; else if (rank > 0 && rank <= 2) b.className = 'freq2';
+      b.onclick = function() {
+        b.blur();
+        if (S.stage !== 'mass') return;
+        if (dateLocked()) return dateOkFirst();
+        S.bufMass = v; S.confirmMassText = null;
+        submitMass();
+      };
+      box.appendChild(b);
+    }
+  }
+
+  // 一覧のマスをタップしてその容器を選ぶ（入力済みはもう一度タップで上書き）
+  function tapCell(lot, serial) {
+    if (S.stage === 'undo') return;
+    // 底黒の〇済みのマスは質量バーが出ないので、タップで消せるようにする
+    if (lot.spec === SOKO && lot.entries[serial] === CIRCLE) {
+      // 表のマスは見るだけで触ることもあるので、〇を消すのは同じマスを続けて2回タップしたときだけ
+      S.viewLotId = lot.lotId;
+      const key = lot.lotId + '|' + serial;
+      if (S.sokoArm && S.sokoArm.key === key && Date.now() - S.sokoArm.t < 5000) { S.sokoArm = null; clearEntryOf(lot, serial); return; }
+      S.sokoArm = { key: key, t: Date.now() };
+      setNotice(label(lot, serial) + ' の〇を消すなら、もう一度タップしてください', 'warn'); render(); return;
+    }
+    const same = S.target && S.target.lot.lotId === lot.lotId && S.target.serial === serial;
+    if (!same) { S.confirmDup = false; S.ng = false; S.bufActual = ''; S.ngFrom = ''; }
+    S.stage = 'num';
+    S.bufNum = serial.slice(-S.numDigits);
+    if (same && S.confirmDup) S.overwrite = 'fix';
+    goMass({ lot: lot, serial: serial });
+  }
+
+  // グループNo: 59701〜59800 → 598（100本ごとの組の番号 = 終わりの番号の下2桁を除いた部分）
+  function groupNo(l) {
+    const st = String(l.start), w = Math.max(1, st.length - 2);
+    return pad(Math.floor((Number(st) - 1) / 100) + 1, w);
+  }
+  // 5kg・8kg・10kg・20kg: 50本ごとのグループNo（番号取り早見表: 1〜50 が 1 … 49951〜50000 が 0、50001 からまた 1）。1ロット100本なので2つ入る
+  function group20(n) { return (Math.floor((Number(n) - 1) / 50) + 1) % 1000; }
+  function lotLabel(l) {
+    const kind = String(l.kind || '');
+    if (/^(30kg|50kg)/.test(kind)) return groupNo(l);
+    if (/^(5kg|8kg|10kg|20kg)/.test(kind) && Number(l.start) >= 1) {
+      const a = group20(l.start), b = group20(l.end);
+      return a === b ? String(a) : a + '・' + b;
+    }
+    return String(l.start);
+  }
+  // ロット番号の表示: 記号は小さく、グループNo（または開始番号）を太く大きくして見分けやすくする
+  // 20kg以下（5・8・10・20kg）は上のバーではグループNoではなく容器番号（開始番号）を出す
+  function smallKind(l) { return /^(5kg|8kg|10kg|20kg)/.test(String(l.kind || '')); }
+  function lotNumHtml(l, forTab) {
+    return (l.prefix ? '<span class="ln-pre">' + esc(l.prefix) + '</span>' : '') +
+      '<span class="ln-grp">' + esc(forTab && smallKind(l) ? String(l.start) : lotLabel(l)) + '</span>' +
+      (forTab && smallKind(l) ? '<span class="ln-tail">〜</span>' : '');
+  }
+
+  // 表を左右にスワイプ（または ‹ › ボタン）で、タブの並び順に前後のロットへ切り替える
+  // 入力画面の上のバーに出すロット: ホームで機種を選んでいればその機種だけ（表示中のロットは別の機種でも出す）
+  function tabLots() {
+    if (!kindFilter) return S.lots;
+    const mine = S.lots.filter(function(l) { return (l.kind || 'その他') === kindFilter || l.lotId === S.viewLotId; });
+    return mine.length ? mine : S.lots;
+  }
+  function lotOrder() {
+    const out = [];
+    groupByKind(tabLots()).forEach(function(g) { Array.prototype.push.apply(out, g.lots); });
+    return out;
+  }
+  function stepLot(dir) {
+    const order = lotOrder();
+    const i = order.findIndex(function(l) { return l.lotId === S.viewLotId; });
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= order.length) return false;
+    S.viewLotId = order[j].lotId;
+    render();
+    const g = $('grid');
+    g.classList.remove('slide-l', 'slide-r'); void g.offsetWidth;
+    g.classList.add(dir > 0 ? 'slide-l' : 'slide-r');
+    return true;
+  }
+  $('lotPrev').onclick = function() { this.blur(); stepLot(-1); };
+  $('lotNext').onclick = function() { this.blur(); stepLot(1); };
+  (function() {
+    let sx = null, sy = 0, st = 0;
+    const g = $('grid');
+    g.addEventListener('touchstart', function(e) {
+      if (e.touches.length !== 1) { sx = null; return; }
+      sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
+    }, { passive: true });
+    g.addEventListener('touchend', function(e) {
+      if (sx === null) return;
+      const t = e.changedTouches[0], dx = t.clientX - sx, dy = t.clientY - sy;
+      sx = null;
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5 && Date.now() - st < 800) {
+        if (stepLot(dx < 0 ? 1 : -1)) e.preventDefault();
+      }
+    });
+  })();
+
+  let lastTabLot = null;
+  let tabsSig = '';
+  function renderTabs() {
+    const tabs = $('tabs');
+    const shownLots = tabLots();
+    // 中身が変わらないときは作り直さない（キーを押すたびに全部のタブを作り直すと重い）
+    const sig = S.viewLotId + '#' + shownLots.map(function(l) { const c = countOf(l); return l.lotId + ':' + (c.filled + c.missing) + '/' + c.size + (l.spec || '') + (l.kind || '') + (lockedBy(l) ? 'L' : ''); }).join(',');
+    if (sig === tabsSig && tabs.childNodes.length) return;
+    tabsSig = sig;
+    const keep = tabs.scrollLeft;
+    tabs.innerHTML = '';
+    if (shownLots.length < 2) return;
+    let active = null;
+    const groups = groupByKind(shownLots);
+    groups.forEach(function(g) {
+     if (groups.length > 1) {
+       const lab = document.createElement('span'); lab.className = 'kind-label'; lab.textContent = g.kind;
+       tabs.appendChild(lab);
+     }
+     g.lots.forEach(function(l) {
+      const b = document.createElement('button');
+      const c = countOf(l);
+      b.innerHTML = (lockedBy(l) ? '<span class="ln-lock">🔒</span>' : '') + (l.spec === SOKO ? '<span class="ln-soko">底黒</span>' : '') + lotNumHtml(l, true) +
+        '<span class="ln-cnt">' + (c.filled + c.missing) + '/' + c.size + '</span>';
+      b.tabIndex = -1;
+      b.className = (l.lotId === S.viewLotId ? 'on' : '') + (c.filled + c.missing >= c.size ? ' done' : '');
+      if (l.lotId === S.viewLotId) active = b;
+      b.onclick = function() { S.viewLotId = l.lotId; b.blur(); render(); };
+      tabs.appendChild(b);
+     });
+    });
+    // 再描画でスクロール位置が戻らないようにし、表示するロットが変わったときだけそのタブを見える位置へ
+    tabs.scrollLeft = keep;
+    if (active && lastTabLot !== S.viewLotId) tabs.scrollLeft = active.offsetLeft - (tabs.clientWidth - active.offsetWidth) / 2;
+    lastTabLot = S.viewLotId;
+  }
+
+  function renderGrid() {
+    const l = lotById(S.viewLotId);
+    const g = $('grid'); g.innerHTML = '';
+    if (!l) return;
+    const c = countOf(l);
+    $('gridTitle').innerHTML = (l.spec === SOKO ? '<span class="ln-soko">底黒</span>' : '') + lotNumHtml(l) +
+      '<span class="ln-range">' + esc(l.prefix + l.start) + ' ～ ' + esc(l.prefix + l.end) + '</span>';
+    $('gridSub').innerHTML = '';
+    $('gridSub').appendChild(document.createTextNode((l.kind || '') + (median(l) !== null ? '　標準 ' + fmtMass(median(l)) : '')));
+    const markText = function(obj, name, color) {
+      const n = obj ? Object.keys(obj).length : 0;
+      if (!n) return;
+      const ds = document.createElement('b'); ds.style.color = color; ds.textContent = '　' + name + ' ' + n + '件'; $('gridSub').appendChild(ds);
+    };
+    markText(l.dups, 'ダブり', 'var(--ng)'); markText(l.seals, 'シール違い', '#7a5bc4');
+    const lk = lockedBy(l);
+    if (lk) { const lb = document.createElement('b'); lb.className = 'lock-note'; lb.textContent = '　🔒 ' + lockText(lk) + ' が入力中（見るだけ）'; $('gridSub').appendChild(lb); }
+    const rep = Object.keys(l.entries).filter(function(k) { return l.entries[k] === REPAIR; }).length;
+    if (rep) { const rs = document.createElement('b'); rs.style.color = '#c77700'; rs.textContent = '　修正 ' + rep + '本'; $('gridSub').appendChild(rs); }
+    $('gridCount').textContent = (c.filled + c.missing) + ' / ' + c.size;
+    const order = lotOrder(), oi = order.findIndex(function(x) { return x.lotId === S.viewLotId; });
+    $('lotPrev').classList.toggle('hidden', order.length < 2); $('lotNext').classList.toggle('hidden', order.length < 2);
+    $('lotPrev').disabled = oi <= 0; $('lotNext').disabled = oi < 0 || oi >= order.length - 1;
+    const frag = document.createDocumentFragment();
+    for (let i = 0; i < 100; i++) {
+      const div = document.createElement('div');
+      if (i >= c.size) { div.className = 'cell'; div.style.visibility = 'hidden'; div.textContent = '-'; frag.appendChild(div); continue; }
+      const serial = pad(Number(l.start) + i, l.start.length);
+      const key = l.lotId + '|' + serial;
+      const m = l.entries[serial];
+      let cls = 'cell';
+      if (m === MISSING) cls += ' missing'; else if (m === REPAIR) cls += ' repair'; else if (m !== undefined) cls += ' filled';
+      if (S.pending[key]) cls += ' pending';
+      if (S.errors[key]) cls += ' error';
+      if (S.target && S.target.lot.lotId === l.lotId && S.target.serial === serial) cls += ' target';
+      if (S.lastKey === key) cls += ' last';
+      const dupN = l.dups ? (l.dups[label(l, serial)] || 0) : 0;
+      if (dupN) cls += ' dup';
+      div.className = cls;
+      div.innerHTML = '<span></span><span class="m"></span>';
+      div.firstChild.textContent = disp3(serial);
+      const addBadge = function(cls, text) { const bd = document.createElement('span'); bd.className = 'badge ' + cls; bd.textContent = text; div.firstChild.appendChild(bd); };
+      if (dupN) addBadge('', 'W' + (dupN > 1 ? dupN : ''));
+      if (l.seals && l.seals[label(l, serial)]) addBadge('seal', 'シ');
+      div.lastChild.textContent = m === undefined ? '' : fmtMass(m);
+      div.setAttribute('data-serial', serial);
+      div.onclick = function() { tapCell(l, serial); };
+      frag.appendChild(div);
+    }
+    g.appendChild(frag);
+    // スマホでは表が枠の中でスクロールするので、今の番号（なければ直前に入れた番号）を枠の真ん中に出す
+    if (window.matchMedia && window.matchMedia('(max-width: 700px)').matches) {
+      const t = g.querySelector('.target') || g.querySelector('.last');
+      if (t) g.scrollTop = Math.max(0, t.offsetTop - g.clientHeight / 2 + t.offsetHeight / 2);
+    }
+  }
+
+  // ---------- キー入力 ----------
+  const CODE_MAP = {
+    Numpad0: '0', Numpad1: '1', Numpad2: '2', Numpad3: '3', Numpad4: '4', Numpad5: '5', Numpad6: '6',
+    Numpad7: '7', Numpad8: '8', Numpad9: '9', NumpadDecimal: '.', NumpadEnter: 'Enter', NumpadAdd: '+',
+    NumpadSubtract: '-', NumpadMultiply: '*', NumpadDivide: '/'
+  };
+  document.addEventListener('keydown', function(ev) {
+    if ($('entry').classList.contains('hidden') || $('dlgDone').open) return;
+    // NumLockがオフでも数字として扱うため、物理キー(code)を優先
+    let k = CODE_MAP[ev.code] || ev.key;
+    if (k === 'Delete') k = 'Backspace';
+    if (k === ',') k = '.';
+    if (!/^[0-9.]$|^(Enter|Backspace|Escape|\+|-|\*|\/)$/.test(k)) return;
+    ev.preventDefault();
+    if (ev.repeat && k === 'Enter') return;
+    handleKey(k);
+  });
+  $('pad').addEventListener('click', function(ev) {
+    const b = ev.target.closest('button'); if (!b) return;
+    b.blur(); handleKey(b.getAttribute('data-k'));
+  });
+  $('btnOk').onclick = function() { this.blur(); if (S.ng) handleKey('/'); };
+  $('btnNg').onclick = function() { this.blur(); if (!S.ng) handleKey('/'); };
+  Array.prototype.forEach.call(document.querySelectorAll('#pad button'), function(b) { b.tabIndex = -1; });
+
+  window.addEventListener('beforeunload', function(e) {
+    if (S.queue.length) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  loadCachedBoot();
+  restoreQueue();
+  loadHome().then(hideSplash, hideSplash);
+  setTimeout(hideSplash, 15000);   // 何があっても15秒で消す
+  pollClaims();
+})();
+</script>
+</body>
+</html>
