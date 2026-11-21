@@ -224,7 +224,8 @@ function check(name, ok, detail) {
   await vp.waitForTimeout(800);
   const vshots = () => vp.evaluate(() => window.__aikc.shots.length);
   check('バルブ: 撮るきっかけの既定は「緑のバルブ」', await vp.evaluate(() => document.querySelector('input[name=trigger][value=valve]').checked));
-  const tgt = await vp.evaluate(() => window.__aikcDebug.valveTarget());
+  const tgt = { x: 0.5, y: 0.5 };   // バルブは画面の真ん中を通ったら撮る（型は使わない）
+  check('バルブ: 型と「自動で合わせる」は出さない（型を合わせなくてよい）', await vp.evaluate(() => document.getElementById('zone').classList.contains('hidden') && document.getElementById('btnFit').classList.contains('hidden')));
   await vp.click('#btnRun'); await vp.waitForTimeout(1300);
   check('バルブ: バルブが見えないあいだは見張って、撮らない', (await vp.textContent('#state')).includes('緑のバルブ') && (await vshots()) === 0, await vp.textContent('#state'));
   const valvePass = async (y) => {

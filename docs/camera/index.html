@@ -24,7 +24,8 @@
   #tmpl text { fill: rgba(255, 211, 77, .55); stroke: rgba(0,0,0,.35); stroke-width: 1.5; paint-order: stroke; font-family: "OCR B", "OCRB", Menlo, monospace; }
   #tmpl .band { fill: rgba(255, 211, 77, .10); }
   #vt { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border: 3px solid #4fd18b; border-radius: 50%; pointer-events: none; box-shadow: 0 0 0 2px rgba(0,0,0,.5); }
-  #vt::after { content: 'バルブ'; position: absolute; top: 44px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #4fd18b; text-shadow: 0 1px 2px #000; white-space: nowrap; }
+  #vt.armed { border-color: #ffd34d; }
+  #vt::after { content: 'バルブがここを通ったら撮る'; position: absolute; top: 44px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #4fd18b; text-shadow: 0 1px 2px #000; white-space: nowrap; }
   #crop { position: absolute; border: 2px dashed rgba(255,255,255,.9); border-radius: 4px; touch-action: none; }
   #crop .lbl { position: absolute; right: 4px; top: 2px; font-size: 12px; text-shadow: 0 1px 2px #000; }
   #crop.fixed { pointer-events: none; } #crop.fixed .handle { display: none; }
@@ -197,7 +198,7 @@
   }
   function cropRect() {
     if (cfg.cropMode === 'full') return { x: 0, y: 0, w: 1, h: 1 };
-    if (valveMode()) { const v = $('video'); if (v.videoWidth) return valveCrop(v, valveTarget(v)); }
+    if (valveMode()) { const v = $('video'); return v.videoWidth && S.lastValve ? valveCrop(v, S.lastValve) : { x: 0, y: 0, w: 1, h: 1 }; }
     return cfg.crop || autoCrop(rotBox(cfg.zone));
   }
   function valveMode() { return cfg.mode === 'flow' && cfg.trigger === 'valve'; }
@@ -242,7 +243,7 @@
         const p = v.play(); if (p && p.catch) p.catch(function() {});
         v.addEventListener('loadedmetadata', layoutZone);
         $('btnRun').disabled = false;
-        setState(cfg.mode === 'flow' ? (cfg.trigger === 'valve' ? '型を刻印に重ねて（緑の丸がバルブの所に来る）「開始」。⚙ で容器の種類' : '枠を刻印が通る所に合わせ、刻印がないときに「開始」') : '検知範囲を台の上に合わせ、台を空にして「開始」');
+        setState(cfg.mode === 'flow' ? (cfg.trigger === 'valve' ? '緑のバルブが画面の真ん中（緑の丸）を通るように向けて「開始」。容器がまるごと入る距離で' : '枠を刻印が通る所に合わせ、刻印がないときに「開始」') : '検知範囲を台の上に合わせ、台を空にして「開始」');
         setInterval(tick, TICK_MS);
         flowLoop();
       })
@@ -284,12 +285,15 @@
     place($('zone'), cfg.zone);
     $('zone').style.transform = cfg.zone.rot ? 'rotate(' + (cfg.zone.rot * 180 / Math.PI).toFixed(2) + 'deg)' : '';
     $('crop').classList.toggle('hidden', cfg.cropMode === 'full');
-    $('crop').classList.toggle('fixed', valveMode());   // バルブのときは型の大きさで決まる（動かせない）
+    $('crop').classList.toggle('fixed', valveMode());   // バルブのときはバルブの大きさで決まる（動かせない）
+    $('zone').classList.toggle('hidden', valveMode());  // バルブのときは型を合わせなくてよい
+    $('btnFit').classList.toggle('hidden', valveMode());
+    if (valveMode()) $('btnUndoFit').classList.add('hidden');
     place($('crop'), cropRect());
     // 緑のバルブで撮るときは、バルブが来るべき所（型の弧の中心）に印を出す
     const v = $('video'), showVt = cfg.mode === 'flow' && cfg.trigger === 'valve' && v.videoWidth;
     $('vt').classList.toggle('hidden', !showVt);
-    if (showVt) { const b = videoBox(), t = valveTarget(v); $('vt').style.left = (b.left + t.x * b.w) + 'px'; $('vt').style.top = (b.top + t.y * b.h) + 'px'; }
+    if (showVt) { const b = videoBox(); $('vt').style.left = (b.left + 0.5 * b.w) + 'px'; $('vt').style.top = (b.top + 0.5 * b.h) + 'px'; }
   }
   window.addEventListener('resize', layoutZone);
   // 枠をドラッグで移動、右下の丸で大きさ
@@ -717,68 +721,106 @@
   // ---------- 緑のバルブで撮る ----------
   // 現場の動画（20kg、2026-11-21）では、刻印は打刻で淡く、枠の中の模様は刻印よりコンベヤの金属板のほうがずっと多かった
   // （刻印が来ると模様が「減る」）。そこで、どの容器にもある緑のバルブのハンドルを目印にする。
-  // 刻印の型はバルブを中心にした弧なので、型を刻印に合わせればバルブが来るべき所（型の弧の中心）が決まる。
-  // 緑のハンドルがそこへ一番近づいたコマ（刻印がちょうど型に重なる瞬間）を、1本あたりの枚数ぶん撮る。
-  const VW = 160, VH = 90;
-  const valveCanvas = document.createElement('canvas'); valveCanvas.width = VW; valveCanvas.height = VH;
-  // 緑のハンドルの位置（映像に対する割合）と大きさ。見えなければ null
-  function findValve(v) {
+  // 容器は向きがまちまちで、刻印がバルブのどちら側に来るかも決まらない（型を刻印に合わせるのは現場では無理だった）。
+  // そこで型は使わず、バルブが画面の真ん中に一番近づいたコマで、バルブを中心に刻印がまるごと入る正方形を保存する。
+  // 刻印の一番外の文字は、バルブのハンドルの直径の約1.7倍の所まであった（真上からの写真と動画、20kg）。
+  const VALVE_REACH = { '50kg': 2.6, '50kgS': 2.6, '40kg': 2.4, '30kg': 2.3 };   // ほかは 2.0（ハンドルの直径に対する倍率）
+  function valveReach() { return VALVE_REACH[cfg.kind] || 2.0; }
+  const valveCanvas = document.createElement('canvas');
+  // 緑のハンドル（つながった鮮やかな緑のかたまり）を全部探す。位置は映像に対する割合、D は直径（映像の画素）
+  function findValves(v) {
+    const vw = v.videoWidth, vh = v.videoHeight;
+    const W = 160, H = Math.max(40, Math.round(160 * vh / vw));
+    if (valveCanvas.width !== W || valveCanvas.height !== H) { valveCanvas.width = W; valveCanvas.height = H; }
     const g = valveCanvas.getContext('2d', { willReadFrequently: true });
-    g.drawImage(v, 0, 0, VW, VH);
-    const d = g.getImageData(0, 0, VW, VH).data;
-    let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+    g.drawImage(v, 0, 0, W, H);
+    const d = g.getImageData(0, 0, W, H).data, m = new Uint8Array(W * H);
     for (let i = 0, k = 0; i < d.length; i += 4, k++) {
       const r = d[i], gr = d[i + 1], b = d[i + 2];
       // バルブの緑だけ（バルブは (74,127,50)〜(66,174,62)、青が低い。床の塗装のくすんだ緑 (89,120,85) は数えない）
-      if (gr > 70 && gr - r > 35 && gr - b > 50) { n++; const x = k % VW, y = Math.floor(k / VW); sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; }
+      if (gr > 70 && gr - r > 35 && gr - b > 50) m[k] = 1;
     }
-    if (n < VW * VH * 0.004) return null;
-    // まとまった丸い形だけ（細長い帯は床やラインの塗装）
-    const mx = sx / n, my = sy / n, a = sxx / n - mx * mx, c = syy / n - my * my, bxy = sxy / n - mx * my;
-    const t = (a + c) / 2, dd = Math.sqrt(Math.max(0, (a - c) * (a - c) / 4 + bxy * bxy));
-    if (Math.sqrt((t + dd) / Math.max(0.25, t - dd)) > 3) return null;
-    // 広がりすぎ（ばらばらの緑）も除く: 丸なら 面積 ≒ 4π√(分散の積)
-    if (n < 0.35 * 4 * Math.PI * Math.sqrt(Math.max(0.01, (t + dd) * (t - dd)))) return null;
-    return { x: (mx + 0.5) / VW, y: (my + 0.5) / VH, n: n };
+    const out = [], stack = [], minN = W * H * 0.002, sc = vw / W;
+    for (let k0 = 0; k0 < m.length; k0++) {
+      if (m[k0] !== 1) continue;
+      let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
+      m[k0] = 2; stack.push(k0);
+      while (stack.length) {
+        const k = stack.pop(), x = k % W, y = (k - x) / W;
+        n++; sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y;
+        if (x > 0 && m[k - 1] === 1) { m[k - 1] = 2; stack.push(k - 1); }
+        if (x < W - 1 && m[k + 1] === 1) { m[k + 1] = 2; stack.push(k + 1); }
+        if (y > 0 && m[k - W] === 1) { m[k - W] = 2; stack.push(k - W); }
+        if (y < H - 1 && m[k + W] === 1) { m[k + W] = 2; stack.push(k + W); }
+      }
+      if (n < minN) continue;
+      const mx = sx / n, my = sy / n, a = sxx / n - mx * mx, c = syy / n - my * my, bxy = sxy / n - mx * my;
+      const t = (a + c) / 2, dd = Math.sqrt(Math.max(0, (a - c) * (a - c) / 4 + bxy * bxy));
+      if (Math.sqrt((t + dd) / Math.max(0.25, t - dd)) > 3) continue;           // 細長い帯（床やラインの塗装）
+      if (n < 0.35 * 4 * Math.PI * Math.sqrt(Math.max(0.01, (t + dd) * (t - dd)))) continue;   // ばらばらの緑
+      out.push({ x: (mx + 0.5) / W, y: (my + 0.5) / H, D: 4 * Math.sqrt(t) * sc, n: n });
+    }
+    return out;
   }
-  // バルブが来るべき所: 型の弧の中心（ARC_CX, ARC_CY）を、枠（傾きも）を通して映像の上に移す
-  function valveTarget(v) {
-    const z = cfg.zone, vb = kindDef().vb, vw = v.videoWidth, vh = v.videoHeight;
-    const ux = (ARC_CX - (vb.x + vb.w / 2)) / vb.w * z.w * vw, uy = (ARC_CY - (vb.y + vb.h / 2)) / vb.h * z.h * vh;
-    const rot = z.rot || 0, cs = Math.cos(rot), sn = Math.sin(rot);
-    return { x: ((z.x + z.w / 2) * vw + ux * cs - uy * sn) / vw, y: ((z.y + z.h / 2) * vh + ux * sn + uy * cs) / vh };
+  // 保存する範囲: バルブを中心に、刻印の一番外の文字まで入る正方形
+  function valveCrop(v, f) {
+    const vw = v.videoWidth, vh = v.videoHeight, R = f.D * valveReach();
+    const x0 = Math.max(0, f.x * vw - R), y0 = Math.max(0, f.y * vh - R);
+    const x1 = Math.min(vw, f.x * vw + R), y1 = Math.min(vh, f.y * vh + R);
+    return { x: x0 / vw, y: y0 / vh, w: Math.max(16, x1 - x0) / vw, h: Math.max(16, y1 - y0) / vh };
   }
-  window.__aikcDebug.valveTarget = function() { return valveTarget($('video')); };
+  function pxDist(v, a, b) { const dx = (a.x - b.x) * v.videoWidth, dy = (a.y - b.y) * v.videoHeight; return Math.sqrt(dx * dx + dy * dy); }
   const VALVE_PASS_MS = 20000;   // ラインが止まりながら流れることがある（現場の動画では1本が10秒かけて通った）
+  const CENTER = { x: 0.5, y: 0.5 };
   function valveFrame(v, now) {
-    const f = findValve(v), t = valveTarget(v);
-    const zw = cfg.zone.w;
+    let all = findValves(v);
+    // 撮り終えたバルブは、画面から出ていくまで追いかけて、もう撮らない（止まったラインで同じ容器を撮り直さない）
+    if (S.hold) {
+      const h = S.hold, near = all.filter(function(f) { return pxDist(v, f, h) < h.D * 1.2; })[0];
+      if (near) { near.D = near.D || h.D; S.hold = near; S.hold.miss = 0; all = all.filter(function(f) { return f !== near; }); }
+      else if (++h.miss >= 4) S.hold = null;
+    }
+    // 追いかけている途中のバルブがあればそれ、なければ画面の真ん中に一番近いもの
+    const p0 = S.pass;
+    let f = null;
+    if (all.length) {
+      const ref = p0 && p0.last ? p0.last : CENTER;
+      f = all.reduce(function(a, b) { return pxDist(v, a, ref) <= pxDist(v, b, ref) ? a : b; });
+      if (p0 && p0.last && pxDist(v, f, p0.last) > p0.last.D * 1.5) f = null;   // 別のバルブ
+    }
+    if (f) S.lastValve = f;
     if (!f) {
       S.noValve = (S.noValve || 0) + 1;
       if (S.pass) { S.pass.gone = (S.pass.gone || 0) + 1; if (S.pass.gone >= 4) endValvePass(now); }
-      else setState(S.noValve > 300 ? '緑のバルブが見えません。緑でないときは ⚙「撮るきっかけ」を「刻印の模様」に' : '見張り中: 緑のバルブが型の中心に来たら撮ります（' + S.passes + ' 本・' + S.shots.length + ' 枚）', S.noValve > 300 ? 'warn' : 'ok');
+      else setState(S.noValve > 300 ? '緑のバルブが見えません。緑でないときは ⚙「撮るきっかけ」を「刻印の模様」に' : '見張り中: 緑のバルブが画面の真ん中を通ったら撮ります（' + S.passes + ' 本・' + S.shots.length + ' 枚）', S.noValve > 300 ? 'warn' : 'ok');
       $('meterBar').style.width = '0%';
       return;
     }
     S.noValve = 0;
-    // 型の中心からの距離（枠の幅を1として）
-    const dx = (f.x - t.x) * v.videoWidth / (zw * v.videoWidth), dy = (f.y - t.y) * v.videoHeight / (zw * v.videoWidth);
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    $('meterBar').style.width = Math.max(0, Math.min(100, (1 - dist) * 100)) + '%';
-    if (!S.pass) S.pass = { start: now, cands: [], below: 0, gone: 0, best: 9 };
-    const p = S.pass; p.gone = 0;
-    if (dist < p.best) p.best = dist;
-    $('zone').classList.toggle('armed', dist < 0.15);
-    setState('バルブが通過中…（型の中心まで ' + Math.round(dist * 100) + '%）');
-    // 型の中心に近いほど良い（近すぎるコマは良い方だけ）。型の中心から枠の幅の半分より遠いコマは撮らない
-    if (!p.saved && dist < 0.5) keepCand(p, 1 / (0.02 + dist), now, v, cfg.cropMode === 'full' ? null : valveCrop(v, f));
-    // 型の中心を通り過ぎて離れ始めたら、バルブが画面から消えるのを待たずに保存する（1本で1回）
-    if (!p.saved && p.best < 0.25 && dist > p.best + 0.3 && p.cands.length) { p.saved = true; saveCands(p.cands); }
-    if (now - p.start > VALVE_PASS_MS) endValvePass(now);
+    place($('crop'), valveCrop(v, f));
+    // 画面の真ん中からの距離（ハンドルの直径を1として）
+    const dist = pxDist(v, f, CENTER) / Math.max(4, f.D);
+    $('meterBar').style.width = Math.max(0, Math.min(100, (1 - dist / 2) * 100)) + '%';
+    if (!S.pass) S.pass = { start: now, cands: [], gone: 0, best: 99 };
+    const p = S.pass; p.gone = 0; p.last = f;
+    if (dist < p.best) { p.best = dist; p.bestT = now; }
+    $('vt').classList.toggle('armed', dist < 0.5);
+    setState('バルブが通過中…（真ん中まで ハンドル ' + dist.toFixed(1) + ' 個ぶん）');
+    // 真ん中に近いほど良い。ハンドル2個ぶんより遠いコマは撮らない
+    if (dist < 2) keepCand(p, 1 / (0.05 + dist), now, v, cfg.cropMode === 'full' ? null : valveCrop(v, f));
+    // 真ん中を通り過ぎて離れ始めたら、バルブが画面から消えるのを待たずに保存する
+    // （1本あたりの枚数ぶん集まるように、一番近づいてから少し（0.3秒）待つ）
+    if (p.best < 1.5 && dist > p.best + 1 && now - p.bestT > 300 && p.cands.length) { finishValve(p, f); return; }
+    if (now - p.start > VALVE_PASS_MS) { if (p.best < 1.5 && p.cands.length) finishValve(p, f); else S.pass = null; }
+  }
+  function finishValve(p, f) {
+    S.pass = null; $('vt').classList.remove('armed');
+    S.hold = Object.assign({ miss: 0 }, f);
+    saveCands(p.cands);
   }
   function endValvePass(now) {
-    const p = S.pass; S.pass = null; $('zone').classList.remove('armed');
-    if (p && !p.saved && p.cands.length && p.best < 0.25) saveCands(p.cands);
+    const p = S.pass; S.pass = null; $('vt').classList.remove('armed');
+    if (p && p.cands.length && p.best < 1.5) saveCands(p.cands);
   }
 
   function flowFrame() {
@@ -826,7 +868,7 @@
   function saveCands(cands) {
     S.passes++;
     flash(); beep();
-    try { autoFitFrom(cands.reduce(function(a, b) { return a.e >= b.e ? a : b; })); } catch (e) { /* 合わせられなくても撮る */ }
+    if (!valveMode()) try { autoFitFrom(cands.reduce(function(a, b) { return a.e >= b.e ? a : b; })); } catch (e) { /* 合わせられなくても撮る */ }
     cands.slice().sort(function(a, b) { return a.t - b.t; }).reduce(function(pr, c) {
       return pr.then(function() { return saveCanvas(c.c, c.at); });
     }, Promise.resolve()).then(function() { setState('撮影しました（' + S.passes + ' 本目・' + S.shots.length + ' 枚）', 'ok'); });
