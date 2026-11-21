@@ -4,11 +4,10 @@
 // 「📷 カメラの読み取り」から確かめて成績表に入れる。
 //
 // カメラ（別のサイト）から呼べるように、この受け口だけは「誰でも呼べる」で公開し、合言葉で守る。
-// 合言葉そのものはここに書かない（照合用の SHA-256 だけ）。合言葉はスクリプトプロパティ API_TOKEN_SHA256 でも変えられる。
+// 合言葉はここに書かない。この読み取り口のスクリプトプロパティ API_TOKEN に、自分で決めた合言葉（16文字以上を推奨）を入れる。
 // 刻印を読む処理は AIkokuin 本体の gas/Kokuin.js をそのまま使う（tools/push_api.sh が送る前に写す）。
-// スクリプトプロパティ: ANTHROPIC_API_KEY（必須）、SPREADSHEET_ID（書く先のスプレッドシートを変えるとき）
+// スクリプトプロパティ: ANTHROPIC_API_KEY（必須）、API_TOKEN（必須・合言葉）、SPREADSHEET_ID（書く先のスプレッドシートを変えるとき）
 
-const API_TOKEN_SHA256_DEFAULT = '4d294b33fe3119c9d839e165bc2cd49b8ca208aadf64d8ce45192cb11282abdf';
 const SPREADSHEET_ID_DEFAULT = '1qaNb6J_ZvD9IWsmdJYYYUnxDGDsGV442Uu59TpqRX8w';   // AI刻印（テスト版）のスプレッドシート
 const CAMERA_SHEET = 'カメラ読み取り';
 const CAMERA_HEADERS = ['受付日時', 'ID', '状態', '記号', '番号', '質量W(kg)', '内容積V(L)', '耐圧試験圧力TP(MPa)', '製造年月',
@@ -50,12 +49,12 @@ function sureRead_(r) {
   return !!(r && r.readable && r.confidence === 'high' && r.tare_kg && r.w_check !== 'NG' && r.group_check !== 'NG');
 }
 
+// 合言葉が未設定のあいだは誰も使えない
 function tokenOk_(token) {
-  if (!token) return false;
-  const want = PropertiesService.getScriptProperties().getProperty('API_TOKEN_SHA256') || API_TOKEN_SHA256_DEFAULT;
-  const d = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(token), Utilities.Charset.UTF_8);
-  const hex = d.map(function(b) { return ('0' + (b & 255).toString(16)).slice(-2); }).join('');
-  return hex === want;
+  const want = PropertiesService.getScriptProperties().getProperty('API_TOKEN');
+  if (!want || String(want).length < 8 || !token) return false;
+  const h = function(x) { return Utilities.base64Encode(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(x), Utilities.Charset.UTF_8)); };
+  return h(token) === h(want);
 }
 
 function appendCamera_(id, r, req) {
