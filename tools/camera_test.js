@@ -251,6 +251,45 @@ function check(name, ok, detail) {
   check('バルブ: ひどくぶれたバルブは撮らず、「ぶれて撮れなかった」と知らせる', (await vshots()) === 4 && (await vp.textContent('#state')).includes('ぶれて'), (await vshots()) + ' ' + await vp.textContent('#state'));
   await vp.close();
 
+  // ---- 総重量シールで撮る（横から撮る画角）: 白地に黒い印刷のかたまりが枠の真ん中を通ったら撮る。動かない黒い印では撮らない
+  const sp = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+  sp.on('pageerror', e => check('ページでJSエラーなし(シール)', false, e.message));
+  await sp.addInitScript(() => {
+    localStorage.setItem('aikc.trigger', '"seal"'); localStorage.setItem('aikc.mode', '"flow"');
+    localStorage.setItem('aikc.zone', JSON.stringify({ x: 0.05, y: 0.3, w: 0.9, h: 0.4 }));
+    const cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720;
+    window.__sx = null;
+    const paint = () => {
+      const g = cv.getContext('2d');
+      g.fillStyle = '#c8c4bc'; g.fillRect(0, 0, 1280, 720);
+      g.fillStyle = '#222'; g.fillRect(620, 380, 40, 12);   // 床の動かない黒い印（枠の真ん中）
+      if (window.__sx !== null) {   // 容器の白い胴と、総重量シール（黒枠と数字）
+        const x = window.__sx;
+        g.fillStyle = '#e6e6e6'; g.fillRect(x - 260, 120, 520, 600);
+        g.fillStyle = '#fff'; g.fillRect(x - 90, 300, 180, 80);
+        g.strokeStyle = '#111'; g.lineWidth = 6; g.strokeRect(x - 90, 300, 180, 80);
+        g.fillStyle = '#111'; g.font = 'bold 48px sans-serif'; g.fillText('17.1', x - 55, 358);
+      }
+    };
+    paint(); setInterval(paint, 33);
+    Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: () => Promise.resolve(cv.captureStream(30)) } });
+  });
+  await sp.goto('file://' + path.join(__dirname, '..', 'docs', 'camera', 'index.html'));
+  await sp.waitForTimeout(800);
+  const sshots = () => sp.evaluate(() => window.__aikc.shots.length);
+  check('シール: 型は出さず、枠は「シールと刻印が通る所」', await sp.evaluate(() => getComputedStyle(document.getElementById('tmpl')).display === 'none' && document.querySelector('#zone .lbl').textContent === 'シールと刻印が通る所'));
+  await sp.click('#btnRun'); await sp.waitForTimeout(6500);
+  check('シール: 容器がないあいだは（床の動かない黒い印があっても）撮らない', (await sshots()) === 0, await sshots());
+  const sealPass = async () => {
+    for (let x = 1500; x >= -220; x -= 12) { await sp.evaluate(a => { window.__sx = a; }, x); await sp.waitForTimeout(33); }
+    await sp.evaluate(() => { window.__sx = null; }); await sp.waitForTimeout(1500);
+  };
+  await sealPass();
+  check('シール: 容器が通ったら、1本あたりの枚数（2枚）撮る', (await sshots()) === 2 && await sp.evaluate(() => window.__aikc.passes) === 1, await sshots());
+  await sealPass();
+  check('シール: 次の容器でも撮る（2本・4枚）', (await sshots()) === 4 && await sp.evaluate(() => window.__aikc.passes) === 2, await sshots());
+  await sp.close();
+
   await browser.close();
   const failed = results.filter(r => !r).length;
   console.log('\n' + (results.length - failed) + ' / ' + results.length + ' PASS（カメラ）');

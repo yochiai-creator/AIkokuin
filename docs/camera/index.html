@@ -101,6 +101,9 @@
     <label style="margin:0;font-weight:400"><input type="radio" name="trigger" value="valve"> 緑のバルブが画面の真ん中を通ったら（おすすめ・型合わせ不要）</label>
   </div>
   <div class="row" style="color:#1b2240;font-size:15px">
+    <label style="margin:0;font-weight:400"><input type="radio" name="trigger" value="seal"> 総重量シールが枠の真ん中に来たら（横から撮るとき・バルブに袋があるとき）</label>
+  </div>
+  <div class="row" style="color:#1b2240;font-size:15px">
     <label style="margin:0;font-weight:400"><input type="radio" name="trigger" value="stamp"> 刻印の模様が増えたら（背景が無地のとき）</label>
   </div>
   <label>容器の種類（刻印の型）</label>
@@ -243,7 +246,7 @@
         const p = v.play(); if (p && p.catch) p.catch(function() {});
         v.addEventListener('loadedmetadata', layoutZone);
         $('btnRun').disabled = false;
-        setState(cfg.mode === 'flow' ? (cfg.trigger === 'valve' ? '緑のバルブが画面の真ん中（緑の丸）を通るように向けて「開始」。容器がまるごと入る距離で' : '枠を刻印が通る所に合わせ、刻印がないときに「開始」') : '検知範囲を台の上に合わせ、台を空にして「開始」');
+        setState(cfg.mode !== 'flow' ? '検知範囲を台の上に合わせ、台を空にして「開始」' : cfg.trigger === 'valve' ? '緑のバルブが画面の真ん中（緑の丸）を通るように向けて「開始」。容器がまるごと入る距離で' : cfg.trigger === 'seal' ? '黄色い枠を、シールと刻印が通る帯に合わせて、容器がないときに「開始」' : '枠を刻印が通る所に合わせ、刻印がないときに「開始」');
         setInterval(tick, TICK_MS);
         flowLoop();
       })
@@ -846,10 +849,84 @@
     else { blurWarn(p); if (p && p.blurred && !p.cands.length) S.noValve = -150; }   // 警告を5秒ほど出したままにする
   }
 
+  // ---------- 総重量シールで撮る ----------
+  // 横から撮る画角（20kg、IMG_1335、2026-11-21）では、刻印がカメラの正面を向いて大きくくっきり写るが、
+  // バルブに袋がかぶっていて緑のバルブは見えない。そこで「白地に黒い印刷」（総重量シールの枠と 17.1 の数字など）を目印にする。
+  // 黄色い枠を、シールと刻印が通る帯に合わせる。枠の中の「白地に黒」のかたまりがふだんより増えたら容器が来たとみなし、
+  // そのかたまりの左右の中心が枠の真ん中に一番近づいたコマを撮る（動画では空のときの数が0〜23、容器が来ると100〜160）。
+  const sealCanvas = document.createElement('canvas');
+  function sealMass(v) {
+    const z = cfg.zone, zw = z.w * v.videoWidth, zh = z.h * v.videoHeight;
+    const W = 160, H = Math.max(16, Math.min(160, Math.round(160 * zh / zw)));
+    if (sealCanvas.width !== W || sealCanvas.height !== H) { sealCanvas.width = W; sealCanvas.height = H; }
+    const g = sealCanvas.getContext('2d', { willReadFrequently: true });
+    drawZone(g, v, v.videoWidth, v.videoHeight, z, W, H);
+    const d = g.getImageData(0, 0, W, H).data, a = new Uint8Array(W * H);
+    for (let i = 0; i < a.length; i++) a[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
+    const col = new Uint16Array(W); let sharp = 0, sn = 0;
+    for (let y = 2; y < H - 2; y++) for (let x = 2; x < W - 2; x++) {
+      const i = y * W + x, l = a[i];
+      sharp += Math.abs(l - a[i + 1]) + Math.abs(l - a[i + W]); sn++;
+      if (l >= 80) continue;
+      // 暗い画素のすぐ近く（2画素以内）にとても明るい所がある＝白地に黒い印刷
+      let br = 0;
+      for (let dy = -2; dy <= 2; dy += 2) for (let dx = -2; dx <= 2; dx += 2) { const b = a[i + dy * W + dx]; if (b > br) br = b; }
+      if (br > 185) col[x]++;
+    }
+    // 動かないもの（床の汚れ・印など）は差し引く: 列ごとに、直近5秒の真ん中の値（中央値）をふだんの値とする。
+    // 流れる容器は1か所に長くいないので中央値に入らない
+    const now = Date.now();
+    S.colHist = (S.colHist || []).filter(function(h) { return now - h.t <= BASE_MS && h.c.length === W; });
+    if (!S.colHist.length || now - S.colHist[S.colHist.length - 1].t >= 100) S.colHist.push({ t: now, c: col.slice() });
+    const m = S.colHist.length, tmp = new Uint16Array(m);
+    for (let x = 0; x < W; x++) {
+      for (let k = 0; k < m; k++) tmp[k] = S.colHist[k].c[x];
+      tmp.sort();
+      const b = tmp[m >> 1];
+      col[x] = col[x] > b ? col[x] - b : 0;
+    }
+    // 一番こみ合った細い帯（枠の幅の15%）＝シールのあたり。散らばった黒は数が伸びない
+    const K = Math.round(W * 0.15);
+    let sum = 0, best = 0, bx = 0;
+    for (let x = 0; x < W; x++) { sum += col[x]; if (x >= K) sum -= col[x - K]; if (x >= K - 1 && sum > best) { best = sum; bx = x - K + 1; } }
+    return { n: best, cx: (bx + K / 2) / W, sharp: sn ? sharp / sn : 0 };
+  }
+  window.__aikcDebug.sealMass = function() { return sealMass($('video')); };
+  function sealFrame(v, now) {
+    const f = sealMass(v), base = baseline(now);
+    const hi = base + Math.max(25, base * 0.8), lo = base + Math.max(12, base * 0.4);
+    // 撮り終えた容器が枠から出ていくまでは次を数えない
+    if (S.sealHold) { if (f.n < lo) { if (++S.sealHold > 3) S.sealHold = 0; } else S.sealHold = 1; }
+    if (!S.pass && !S.sealHold) S.hist.push({ t: now, v: f.n });
+    $('meterBar').style.width = Math.max(0, Math.min(100, (f.n - base) / Math.max(1, hi - base) * 60)) + '%';
+    if (!S.pass) {
+      if (S.sealHold || f.n <= hi) { if (!S.sealHold) setState('見張り中: シールが枠の真ん中に来たら撮ります（' + S.passes + ' 本・' + S.shots.length + ' 枚）', 'ok'); return; }
+      S.pass = { start: now, cands: [], below: 0, best: 9 };
+    }
+    const p = S.pass;
+    if (f.n < lo) p.below++; else p.below = 0;
+    const dist = Math.abs(f.cx - 0.5) * 2;   // 0＝枠の真ん中、1＝枠の端
+    if (dist < p.best) { p.best = dist; p.bestT = now; }
+    $('zone').classList.toggle('armed', dist < 0.15);
+    setState('容器が通過中…（シールが枠の真ん中まで ' + Math.round(dist * 100) + '%）');
+    if (f.n > lo) { p.minX = Math.min(p.minX === undefined ? 9 : p.minX, f.cx); p.maxX = Math.max(p.maxX === undefined ? -9 : p.maxX, f.cx); }
+    if (f.n > lo && dist < 0.5) keepCand(p, f.sharp * f.sharp / (0.1 + dist), now, v);
+    // 動いて来たかたまりだけ（枠の幅の25%以上動いた）。床の印のように動かない黒では撮らない
+    const moved = p.maxX - p.minX >= 0.25;
+    const done = function() { S.pass = null; S.sealHold = 1; $('zone').classList.remove('armed'); saveCands(p.cands); };
+    // 真ん中を過ぎて離れ始めたら保存（1本あたりの枚数ぶん集まるよう少し待つ）
+    if (moved && p.best < 0.2 && dist > p.best + 0.3 && now - p.bestT > 300 && p.cands.length && (p.cands.length >= cfg.burst || dist >= 0.5)) return done();
+    if (p.below >= 3 || now - p.start > VALVE_PASS_MS) {
+      if (moved && p.best < 0.3 && p.cands.length) return done();
+      S.pass = null; $('zone').classList.remove('armed');
+    }
+  }
+
   function flowFrame() {
     if (!S.running || cfg.mode !== 'flow') return;
     const v = $('video'), now = Date.now();
     if (cfg.trigger === 'valve') { if (now >= S.learnUntil) valveFrame(v, now); return; }
+    if (cfg.trigger === 'seal') { if (now >= S.learnUntil) sealFrame(v, now); return; }
     const f = zoneTexture(); if (!f) return;
     const blur = S.prevSm ? diff(f.sm, S.prevSm) : 0; S.prevSm = f.sm;
     if (!S.pass) S.hist.push({ t: now, v: f.tex });   // 通過中の値はふだんの値に入れない
@@ -1056,7 +1133,9 @@
     if ($('sRot')) { const d = (cfg.zone.rot || 0) * 180 / Math.PI; $('sRot').value = d.toFixed(1); $('vRot').textContent = d.toFixed(1) + '°'; }
     layoutZone();
     $('stillBox').classList.toggle('hidden', cfg.mode !== 'stop');
-    $('zone').querySelector('.lbl').textContent = cfg.mode === 'flow' ? '刻印の型: ' + cfg.kind : '検知範囲';
+    const sealMode = cfg.mode === 'flow' && cfg.trigger === 'seal';
+    $('zone').querySelector('.lbl').textContent = sealMode ? 'シールと刻印が通る所' : cfg.mode === 'flow' ? '刻印の型: ' + cfg.kind : '検知範囲';
+    $('tmpl').style.display = sealMode ? 'none' : '';
     $('sKind').value = cfg.kind;
     drawTemplate();
     if (!S.running) $('btnRun').textContent = runLabel();
