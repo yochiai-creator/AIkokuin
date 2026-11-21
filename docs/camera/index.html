@@ -46,9 +46,21 @@
   .btn.sub { background: transparent; font-weight: 400; font-size: 14px; }
   .btn:disabled { opacity: .4; }
   #count { font-size: 15px; min-width: 90px; }
-  #thumbs { display: flex; gap: 4px; overflow-x: auto; flex: 1; height: 44px; }
+  #thumbs { display: flex; gap: 4px; overflow-x: auto; flex: 1; height: 44px; min-width: 0; }
+  /* スマホの縦画面でも ⚙ が画面の外へ出ないように: 開始ボタンは折り返して縮み、下の段は横にずらして見る */
+  .btn.main { min-width: 0; white-space: normal; line-height: 1.25; }
+  #btnSave, #btnSet { flex-shrink: 0; }
+  #btnSet { font-size: 22px; padding: 6px 12px; }
+  #bar .row:last-child { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  #bar .row:last-child .btn { flex-shrink: 0; }
+  @media (max-width: 600px) {
+    .btn.main { font-size: 15px; padding: 6px 10px; }
+    .wide { display: none; }
+    #count { min-width: 0; font-size: 14px; flex-shrink: 0; }
+  }
   #thumbs img { height: 44px; border-radius: 4px; }
-  #settings { position: fixed; right: 10px; bottom: 140px; width: min(360px, calc(100% - 20px)); background: #fff; color: #1b2240; border-radius: 12px; padding: 14px; z-index: 5; }
+  #settings { position: fixed; right: 10px; bottom: 140px; width: min(360px, calc(100% - 20px)); max-height: calc(100% - 160px); overflow-y: auto; -webkit-overflow-scrolling: touch;
+    background: #fff; color: #1b2240; border-radius: 12px; padding: 14px; z-index: 5; }
   #settings label { display: block; font-size: 14px; margin: 10px 0 4px; font-weight: 700; }
   #settings input[type=range] { width: 100%; }
   #settings .v { float: right; font-weight: 400; }
@@ -69,7 +81,7 @@
 <div id="bar">
   <div class="row">
     <button class="btn main" id="btnRun" disabled>▶ 開始</button>
-    <button class="btn" id="btnSave" disabled>📤 写真に保存</button>
+    <button class="btn" id="btnSave" disabled>📤 <span class="wide">写真に</span>保存</button>
     <button class="btn sub" id="btnSet">⚙</button>
   </div>
   <div class="row">
@@ -214,7 +226,7 @@
         const p = v.play(); if (p && p.catch) p.catch(function() {});
         v.addEventListener('loadedmetadata', layoutZone);
         $('btnRun').disabled = false;
-        setState('検知範囲を台の上に合わせ、台を空にして「開始」');
+        setState(cfg.mode === 'flow' ? (cfg.trigger === 'valve' ? '型を刻印に重ねて（緑の丸がバルブの所に来る）「開始」。⚙ で容器の種類' : '枠を刻印が通る所に合わせ、刻印がないときに「開始」') : '検知範囲を台の上に合わせ、台を空にして「開始」');
         setInterval(tick, TICK_MS);
         flowLoop();
       })
@@ -886,7 +898,7 @@
   function updateCount() {
     $('count').textContent = (cfg.mode === 'flow' ? S.passes + ' 本・' : '') + S.shots.length + ' 枚';
     $('btnSave').disabled = !S.shots.length;
-    $('btnSave').textContent = '📤 写真に保存（' + S.shots.length + '）';
+    $('btnSave').innerHTML = '📤 <span class="wide">写真に</span>保存（' + S.shots.length + '）';
   }
   function flash() { const z = $('zone'); z.classList.add('shot'); setTimeout(function() { z.classList.remove('shot'); }, 150); }
   let audio = null;
