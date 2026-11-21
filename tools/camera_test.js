@@ -302,6 +302,14 @@ function check(name, ok, detail) {
   check('シール: 容器が通ったら、1本あたりの枚数（2枚）撮る', (await sshots()) === 2 && await sp.evaluate(() => window.__aikc.passes) === 1, await sshots());
   await sealPass();
   check('シール: 次の容器でも撮る（2本・4枚）', (await sshots()) === 4 && await sp.evaluate(() => window.__aikc.passes) === 2, await sshots());
+  const gray = await sp.evaluate(async () => {
+    const f = window.__aikc.shots[0], u = URL.createObjectURL(f), im = new Image(); im.src = u; await im.decode();
+    const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const g = c.getContext('2d'); g.drawImage(im, 0, 0);
+    const d = g.getImageData(0, 0, c.width, c.height).data; let maxDiff = 0;
+    for (let i = 0; i < d.length; i += 4 * 97) maxDiff = Math.max(maxDiff, Math.abs(d[i] - d[i + 1]), Math.abs(d[i + 1] - d[i + 2]));
+    return [maxDiff, c.width, c.height];
+  });
+  check('読みやすく加工（既定）: 保存した写真は白黒（凹凸の強調）で、画面全体の大きさ', gray[0] <= 6 && gray[1] === 1280 && gray[2] === 720, JSON.stringify(gray));
   await sp.close();
 
   await browser.close();

@@ -123,6 +123,10 @@
   </div>
   <label>動きの感度 <span class="v" id="vSens"></span></label>
   <input type="range" id="sSens" min="1" max="10" step="1">
+  <label>読みやすく加工</label>
+  <div class="row" style="color:#1b2240;font-size:15px">
+    <label style="margin:0;font-weight:400"><input type="checkbox" id="cEnhance"> 白黒にして刻印の凹みを強調する（おすすめ。淡い刻印が読みやすくなる）</label>
+  </div>
   <label>保存する範囲</label>
   <div class="row" style="color:#1b2240;font-size:15px">
     <label style="margin:0;font-weight:400"><input type="radio" name="cropMode" value="around"> 刻印のまわり（白い点線。おすすめ）</label>
@@ -197,6 +201,7 @@
     autoFit: store.get('autoFit', false),  // 自動補正（撮るたびに型を実物に合わせる）。現場の写真で反射や1段ずれに寄ることがあったので既定はオフ
     mode: store.get('mode', 'flow'),    // flow: 流れる（刻印が枠を通ったら） / stop: 止まる（止まったら）
     trigger: store.get('trigger', 'valve'),  // 流れるときに撮るきっかけ: valve＝緑のバルブ（既定）/ stamp＝刻印の模様
+    enhance: store.get('enhance', true),         // 保存する写真を読みやすく加工する（白黒・凹凸の強調）
     cropMode: store.get('cropMode', 'around'),   // around: 刻印のまわりだけ保存 / full: 画面全体
     crop: store.get('crop', null),               // 保存する範囲（null なら刻印の枠から自動）
     zoom: store.get('zoom', null), torch: store.get('torch', false)
@@ -1050,7 +1055,54 @@
     c.getContext('2d').drawImage(v, sx, sy, sw, sh, 0, 0, sw, sh);
     return { sx: sx, sy: sy };
   }
+  // ---------- 読みやすく加工する ----------
+  // 刻印は白い塗装に打った淡い凹み。白黒にして、まわり（ぼかした画像）との明るさの差を3倍に強め、
+  // 明るさの幅をいっぱいに広げる（局所コントラスト強調）。真上から撮った淡い刻印（HXR 14921）が、
+  // 加工前はほとんど見えなかったのが読めるようになった。反射で白く飛んだ所は差を弱めてざらつきを抑える。
+  function boxBlur(src, dst, w, h, r) {   // 横→縦の順に、幅 2r+1 の平均（端は端の値をくり返す）
+    const tmp = new Uint8Array(w * h), k = 2 * r + 1;
+    for (let y = 0; y < h; y++) {
+      const o = y * w; let s = src[o] * (r + 1);
+      for (let x = 1; x <= r; x++) s += src[o + Math.min(w - 1, x)];
+      for (let x = 0; x < w; x++) {
+        tmp[o + x] = s / k;
+        s += src[o + Math.min(w - 1, x + r + 1)] - src[o + Math.max(0, x - r)];
+      }
+    }
+    for (let x = 0; x < w; x++) {
+      let s = tmp[x] * (r + 1);
+      for (let y = 1; y <= r; y++) s += tmp[Math.min(h - 1, y) * w + x];
+      for (let y = 0; y < h; y++) {
+        dst[y * w + x] = s / k;
+        s += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x];
+      }
+    }
+  }
+  function enhanceCanvas(c) {
+    const w = c.width, h = c.height, g = c.getContext('2d');
+    const img = g.getImageData(0, 0, w, h), d = img.data, n = w * h;
+    const a = new Uint8Array(n), b = new Uint8Array(n);
+    for (let i = 0; i < n; i++) a[i] = (d[i * 4] * 3 + d[i * 4 + 1] * 6 + d[i * 4 + 2]) / 10;
+    const r = Math.max(3, Math.round(Math.max(w, h) / 240));   // 1920画素の写真で8画素
+    boxBlur(a, b, w, h, r); boxBlur(b, b, w, h, r);
+    const e = (function(i) { const hp = a[i] - b[i]; return 128 + 3 * (a[i] > 240 ? hp * 0.3 : hp); });
+    const hist = new Uint32Array(256);
+    for (let i = 0; i < n; i += 7) hist[Math.max(0, Math.min(255, Math.round(e(i))))]++;
+    let tot = 0; for (let v = 0; v < 256; v++) tot += hist[v];
+    let lo = 0, hi = 255, acc = 0;
+    for (let v = 0; v < 256; v++) { acc += hist[v]; if (acc >= tot * 0.01) { lo = v; break; } }
+    acc = 0; for (let v = 255; v >= 0; v--) { acc += hist[v]; if (acc >= tot * 0.01) { hi = v; break; } }
+    const sc = 255 / Math.max(1, hi - lo);
+    for (let i = 0; i < n; i++) {
+      const v = Math.max(0, Math.min(255, (e(i) - lo) * sc));
+      d[i * 4] = d[i * 4 + 1] = d[i * 4 + 2] = v;
+    }
+    g.putImageData(img, 0, 0);
+  }
+  window.__aikcDebug.enhanceCanvas = enhanceCanvas;
+
   function saveCanvas(c, at) {
+    if (cfg.enhance) { try { enhanceCanvas(c); } catch (e) { /* 加工できなくてもそのまま保存 */ } }
     if (S.shots.length >= MAX_SHOTS) { setState('ためた写真が ' + MAX_SHOTS + ' 枚になりました。「📤 写真に保存」してください', 'ng'); return Promise.resolve(); }
     return new Promise(function(res) { c.toBlob(res, 'image/jpeg', 0.92); }).then(function(blob) {
       return blob.arrayBuffer().then(function(buf) {
@@ -1219,6 +1271,8 @@
   Array.prototype.forEach.call(document.querySelectorAll('input[name=trigger]'), function(r) {
     r.onchange = function() { cfg.trigger = this.value; store.set('trigger', cfg.trigger); S.pass = null; S.hist = []; S.learnUntil = Date.now() + 1000; showCfg(); };
   });
+  $('cEnhance').checked = !!cfg.enhance;
+  $('cEnhance').onchange = function() { cfg.enhance = this.checked; store.set('enhance', cfg.enhance); };
   $('cAutoFit').checked = !!cfg.autoFit;
   $('cAutoFit').onchange = function() { cfg.autoFit = this.checked; store.set('autoFit', cfg.autoFit); };
   $('btnCropReset').onclick = function() { cfg.crop = null; store.set('crop', null); showCfg(); };
