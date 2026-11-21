@@ -277,7 +277,7 @@ function check(name, ok, detail) {
   await sp.goto('file://' + path.join(__dirname, '..', 'docs', 'camera', 'index.html'));
   await sp.waitForTimeout(800);
   const sshots = () => sp.evaluate(() => window.__aikc.shots.length);
-  check('シール: 型は出さず、枠は「シールと刻印が通る所」', await sp.evaluate(() => getComputedStyle(document.getElementById('tmpl')).display === 'none' && document.querySelector('#zone .lbl').textContent === 'シールと刻印が通る所'));
+  check('シール: 型・枠・点線・「自動で合わせる」は出さず、真ん中に「シールと刻印がここを通ったら撮る」', await sp.evaluate(() => document.getElementById('zone').classList.contains('hidden') && document.getElementById('crop').classList.contains('hidden') && document.getElementById('btnFit').classList.contains('hidden') && !document.getElementById('vt').classList.contains('hidden') && document.getElementById('vt').getAttribute('data-label') === 'シールと刻印がここを通ったら撮る'));
   // 種類ごとに撮り方を覚える: 20kg はシール、50kg はバルブ。切り替えると戻る
   await sp.click('#btnSet');
   await sp.selectOption('#sKind', '20kg');
