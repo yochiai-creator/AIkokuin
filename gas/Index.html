@@ -322,7 +322,7 @@
 <div class="sp-sub">読み込み中…</div></div>
 <script>window.SPLASH_T0 = Date.now();</script>
 <header>
-  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v14（カメラがその場で読んだ分を入れる）</span></h1>
+  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v15（記号が読めないコマも同じ容器にまとめる）</span></h1>
   <span class="user" id="workerBadge"></span>
   <span class="user" id="user"></span>
   <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
@@ -2548,7 +2548,7 @@
           .then(function(r) {
             if (r.error) { it.error = r.error; return; }
             it.precise = ps.length;
-            if (r.readable) { it.r = r; it.key = (r.symbol || '') + '|' + r.number; }
+            if (r.readable) { it.r = r.symbol || !it.r.symbol ? r : Object.assign({}, r, { symbol: it.r.symbol }); it.key = r.number; }
             else it.r.note = '精読でも確定できませんでした' + (r.note ? '（' + r.note + '）' : '');
             it.preciseOk = r.readable;
           }).then(precise);
@@ -2568,11 +2568,14 @@
     reads.forEach(function(x) {
       if (x.r.error) { V.errors++; V.lastErr = x.r.error; return; }
       if (!x.r.readable) { V.fails++; return; }
-      const key = (x.r.symbol || '') + '|' + x.r.number;
+      // 同じ容器かどうかは番号で決める（記号が画面の外で読めなかったコマも同じ容器にまとめる。記号が食い違うときは別の容器）
+      const key = x.r.number;
       const prev = items[items.length - 1];
-      if (prev && prev.key === key) {
+      if (prev && prev.key === key && (!prev.r.symbol || !x.r.symbol || prev.r.symbol === x.r.symbol)) {
         prev.picks.push(x.p); prev.rs.push(x.r);
+        const sym = prev.r.symbol || x.r.symbol;
         if (CONF_RANK[x.r.confidence] > CONF_RANK[prev.r.confidence] || (!prev.r.tare_kg && x.r.tare_kg)) { prev.r = x.r; prev.thumb = x.p.thumb; }
+        if (!prev.r.symbol && sym) prev.r = Object.assign({}, prev.r, { symbol: sym });
         return;
       }
       items.push({ key: key, r: x.r, thumb: x.p.thumb, t: x.p.t, picks: [x.p], rs: [x.r] });
@@ -2705,7 +2708,7 @@
     vidButtons({}); vidBar(0.3); vidMsg('カメラの読み取りを取り寄せています…');
     call('cameraReads', {}).then(function(rows) {
       V.items = (rows || []).map(function(x) {
-        return { key: (x.read.symbol || '') + '|' + x.read.number, r: x.read, thumb: x.thumb || '', t: x.at, camId: x.id,
+        return { key: x.read.number, r: x.read, thumb: x.thumb || '', t: x.at, camId: x.id,
           picks: [], rs: [x.read], fastOk: !!x.read.sure, camHow: x.read.how || '' };
       });
       V.cost = rows.reduce(function(a, x) { return a + (Number(x.read.cost_usd) || 0); }, 0);

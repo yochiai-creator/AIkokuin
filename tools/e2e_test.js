@@ -1342,7 +1342,7 @@ function check(name, ok, detail) {
       // 速読（5コマ）
       reply({ number: '52011' }),                                   // 1コマだけ → 精読へ
       reply({ number: '52012', cap_number: '41' }),                 // 2コマ一致・W検算OK・グループNo OK → 速読で確定
-      reply({ number: '52012', cap_number: '41' }),
+      reply({ number: '52012', cap_number: '41', symbol: '' }),     // 記号が画面の外で読めなかったコマも同じ容器にまとめる
       reply({ number: '52013', tare_kg: '16.9', seal_kg: '17.1' }), // W検算NG → 精読へ
       reply({ number: '52014', kind: '50kg' }),                     // 1コマだけ → 精読へ
       // 精読（3本）
@@ -1381,7 +1381,7 @@ function check(name, ok, detail) {
     const models = global.CLAUDE_REQS.map(q => q.body.model);
     check('動画: ホームから撮っても入力画面を開いて読む', await pv.isVisible('#entry'));
     check('動画: 5コマを速読（Haiku）、確定できない3本だけ精読（Opus）', models.length === 8 && models.slice(0, 5).every(x => x === 'claude-haiku-5-5') && models.slice(5).every(x => x === 'claude-opus-5-5'), JSON.stringify(models));
-    check('動画: 続けて同じ番号のコマは1本にまとめて4本', rows.length === 4, JSON.stringify(rows));
+    check('動画: 続けて同じ番号のコマは（記号が読めなかったコマも）1本にまとめて4本', rows.length === 4 && rows[1].t.includes('HRH') && rows[1].t.includes('52012'), JSON.stringify(rows));
     check('動画: 速読で2コマ一致＋検算・グループNo OK は確定、精読で直ったものもチェック、種別違いは未チェック',
       rows[0] && rows[0].ck && rows[0].t.includes('精読') && rows[1].ck && rows[1].t.includes('速読 2コマ一致') && rows[2].ck && rows[2].t.includes('W16.6') && !rows[3].ck && !rows[3].dis && rows[3].t.includes('容器種別'), JSON.stringify(rows));
     const msg = await pv.textContent('#vidMsg');
