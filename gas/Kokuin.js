@@ -290,3 +290,43 @@ function kokuinSheet_() {
   }
   return sh;
 }
+
+// ---------- LPG刻印カメラの「その場で読む」で読んだ分（gas-api の読み取り口が「カメラ読み取り」シートに書く） ----------
+const CAMERA_READ_SHEET = 'カメラ読み取り';
+// 画面から呼ぶ: まだ入力していない行（直近2日）を古い順に返す
+function cameraReads() {
+  const sh = getSpreadsheet_().getSheetByName(CAMERA_READ_SHEET);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 24).getValues();
+  const since = Date.now() - 2 * 24 * 3600 * 1000, out = [];
+  const s = function(v) { return v === null || v === undefined ? '' : String(v); };
+  rows.forEach(function(x) {
+    const at = x[0] instanceof Date ? x[0] : new Date(x[0]);
+    if (s(x[2]) !== '未入力' || !(at.getTime() >= since)) return;
+    const read = {
+      readable: /^\d{5,}$/.test(s(x[4])), symbol: s(x[3]), number: s(x[4]), tare_kg: s(x[5]) === '' ? '' : Number(x[5]).toFixed(1),
+      volume_l: s(x[6]), test_pressure_mpa: s(x[7]), manufactured: s(x[8]), ym: kokuinYm_(s(x[8])), seal_kg: s(x[9]), w_check: s(x[10]),
+      kind: s(x[11]) || '不明', confidence: s(x[12]) || 'low', sure: s(x[13]) === '確定', how: s(x[14]), model: s(x[15]), note: s(x[16]),
+      cost_usd: Number(x[19]) || 0, cap_number: s(x[21]), group_check: s(x[22]), w_from_seal: s(x[10]) === 'シールから', other: ''
+    };
+    if (!read.readable) return;
+    out.push({ id: s(x[1]), at: Utilities.formatDate(at, 'Asia/Tokyo', 'HH:mm:ss'), read: read, thumb: s(x[23]) });
+  });
+  return out;
+}
+// 画面から呼ぶ: 成績表に入れた行に「入力済み」の印をつける
+function markCameraReads(req) {
+  const ids = (req && req.ids || []).map(String);
+  const sh = getSpreadsheet_().getSheetByName(CAMERA_READ_SHEET);
+  if (!sh || !ids.length || sh.getLastRow() < 2) return { ok: true, n: 0 };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const col = sh.getRange(2, 2, sh.getLastRow() - 1, 2).getValues();
+    let n = 0;
+    col.forEach(function(x, i) { if (ids.indexOf(String(x[0])) >= 0 && x[1] === '未入力') { sh.getRange(i + 2, 3).setValue('入力済み'); n++; } });
+    return { ok: true, n: n };
+  } finally {
+    lock.releaseLock();
+  }
+}

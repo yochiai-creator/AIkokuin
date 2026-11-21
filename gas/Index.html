@@ -288,7 +288,8 @@
   .cam-row { display: flex; gap: 6px; margin-bottom: 8px; }
   .cambtn { flex: 1; border: 2px solid var(--navy); background: var(--navy); color: #fff; border-radius: 10px;
     padding: 10px; font-size: 17px; font-weight: 700; }
-  .cambtn.sub { flex: 0 0 auto; background: #fff; color: var(--navy); font-size: 14px; font-weight: 400; }
+  .cambtn.sub { flex: 0 0 auto; background: #fff; color: var(--navy); font-size: 14px; font-weight: 400; padding: 10px 8px; white-space: nowrap; }
+  .cambtn { min-width: 0; white-space: nowrap; }
   /* 動画から読む: 一覧（画面いっぱい） */
   #vidPanel { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 16px 40px; }
   #vidPanel h2 { margin: 4px 0 8px; font-size: 20px; color: var(--navy); }
@@ -321,7 +322,7 @@
 <div class="sp-sub">読み込み中…</div></div>
 <script>window.SPLASH_T0 = Date.now();</script>
 <header>
-  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v13（白黒・凹凸強調の写真も読む）</span></h1>
+  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v14（カメラがその場で読んだ分を入れる）</span></h1>
   <span class="user" id="workerBadge"></span>
   <span class="user" id="user"></span>
   <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
@@ -425,9 +426,10 @@
   <div class="input-layout">
     <div class="panel" id="inPanel">
       <div class="cam-row" id="camRow">
-        <button class="cambtn" id="btnVidShoot" tabindex="-1">🎬 撮って読む</button>
+        <button class="cambtn" id="btnVidShoot" tabindex="-1">🎬 撮る</button>
         <button class="cambtn sub" id="btnVidPick" tabindex="-1">📂 選ぶ</button>
         <button class="cambtn sub" id="btnCamApp" tabindex="-1">📷 自動撮影</button>
+        <button class="cambtn sub" id="btnCamReads" tabindex="-1" title="LPG刻印カメラが撮ってすぐ読んだ分">📋 読んだ分</button>
       </div>
       <input type="file" id="vidShoot" accept="video/*,image/*" capture="environment" class="hidden">
       <input type="file" id="vidFile" accept="video/*,image/*" multiple class="hidden">
@@ -2620,12 +2622,13 @@
     $('vidList').innerHTML = V.items.map(function(it, i) {
       const st = vidStatus(it), r = it.r;
       const name = it.m.hit ? label(it.m.hit.lot, it.m.hit.serial) : (r.symbol ? r.symbol + ' ' : '') + r.number;
-      const how = it.fastOk ? '速読 ' + it.rs.length + 'コマ一致' : it.precise ? '精読（' + it.precise + 'コマ）' : '速読 ' + it.rs.length + 'コマ';
+      const how = it.camId ? 'カメラ ' + it.camHow + (it.fastOk ? '・確定' : '') + '　' + esc(String(it.t || '')) :
+        it.fastOk ? '速読 ' + it.rs.length + 'コマ一致' : it.precise ? '精読（' + it.precise + 'コマ）' : '速読 ' + it.rs.length + 'コマ';
       return '<div class="vid-row ' + (it.saved ? 'saved' : st[1] === 'ok' ? 'ok' : st[1] === 'err' ? 'ng' : '') + '">' +
         '<input type="checkbox" data-i="' + i + '"' + (it.checked ? ' checked' : '') + (it.canSave && !it.saved ? '' : ' disabled') + '>' +
         '<img src="' + it.thumb + '" alt="">' +
         '<div><div><span class="num">' + esc(name) + '</span>' + (r.tare_kg ? '<span class="w">W' + esc(r.tare_kg) + (r.w_from_seal ? '（シールから）' : '') + '</span>' : '') + '</div>' +
-        '<div class="meta">' + esc(kokuinText(r)) + '　' + how + (V.how === 'video' ? '　' + it.t.toFixed(1) + '秒' : V.picks.length > 1 ? '　' + it.t + '枚目' : '') + (r.note ? '<br>' + esc(r.note) : '') + '</div>' +
+        '<div class="meta">' + esc(kokuinText(r)) + '　' + how + (it.camId ? '' : V.how === 'video' ? '　' + it.t.toFixed(1) + '秒' : V.picks.length > 1 ? '　' + it.t + '枚目' : '') + (r.note ? '<br>' + esc(r.note) : '') + '</div>' +
         '<div class="st ' + st[1] + '">' + esc(st[0]) + '</div></div></div>';
     }).join('');
     const n = V.items.filter(function(it) { return it.checked && !it.saved; }).length;
@@ -2650,7 +2653,7 @@
   // 6) チェックした分を保存（刻印のWを質量として）。標準から大きく外れるWは保存せずに残す
   function vidSave() {
     if (S.stage !== 'num') resetEntry('容器番号を入力', 'info');
-    let saved = 0, skipped = 0;
+    let saved = 0, skipped = 0; const camDone = [];
     V.items.forEach(function(it) {
       if (!it.checked || it.saved || !it.canSave) return;
       const lot = it.m.hit.lot, serial = it.m.hit.serial, mass = Math.round(Number(it.r.tare_kg) * 10) / 10;
@@ -2666,7 +2669,9 @@
       call('saveKokuin', { lotId: lot.lotId, serial: serial, read: it.r, how: V.how, worker: worker(), device: $('fDevice').value.trim() })
         .catch(function() { /* 記録できなくても入力は続く */ });
       it.saved = true; saved++;
+      if (it.camId) camDone.push(it.camId);
     });
+    if (camDone.length) call('markCameraReads', { ids: camDone, worker: worker() }).catch(function() { /* 印をつけられなくても入力は済んでいる */ });
     if (saved) beep(true);
     vidRender();
     vidMsg(saved + ' 本を保存しました' + (skipped ? '（' + skipped + ' 本は保存しませんでした。理由は一覧に）' : ''), saved ? 'ok' : 'warn');
@@ -2691,6 +2696,23 @@
     if (!V.running) { vidButtons({}); vidMsg('止めました', 'warn'); }
   };
   $('btnVidSave').onclick = function() { vidSave(); };
+  // LPG刻印カメラが「その場で読む」で読んだ分（カメラ読み取り シートの未入力の行）を一覧に出す。確かめて保存すると成績表へ
+  $('btnCamReads').onclick = function() {
+    this.blur();
+    if (S.stage !== 'num') resetEntry('容器番号を入力', 'info');
+    vidReset(); V.how = 'camera';
+    $('vidPanel').classList.remove('hidden'); $('vidList').innerHTML = '';
+    vidButtons({}); vidBar(0.3); vidMsg('カメラの読み取りを取り寄せています…');
+    call('cameraReads', {}).then(function(rows) {
+      V.items = (rows || []).map(function(x) {
+        return { key: (x.read.symbol || '') + '|' + x.read.number, r: x.read, thumb: x.thumb || '', t: x.at, camId: x.id,
+          picks: [], rs: [x.read], fastOk: !!x.read.sure, camHow: x.read.how || '' };
+      });
+      V.cost = rows.reduce(function(a, x) { return a + (Number(x.read.cost_usd) || 0); }, 0);
+      vidJudge(); vidRender();
+      if (!V.items.length) vidMsg('カメラで読んだ分で、まだ入力していないものはありません（LPG刻印カメラの ⚙「撮ったらすぐ読む」）', 'warn');
+    }).catch(function(e) { vidMsg('取り寄せられませんでした: ' + (e && e.message || e), 'err'); });
+  };
   $('btnVidAll').onclick = function() { V.items.forEach(function(it) { if (it.canSave && !it.saved) it.checked = true; }); vidRender(); };
   $('btnVidClose').onclick = function() { vidClose(); };
 

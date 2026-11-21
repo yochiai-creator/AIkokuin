@@ -1409,6 +1409,23 @@ function check(name, ok, detail) {
     await pv.click('#btnVidSave'); await pv.waitForTimeout(1200);
     const kv2 = ks.getRange(2, 1, ks.getLastRow() - 1, 23).getValues();
     check('写真: 保存して刻印記録に「photo」で残す', c.getLot(L.lotId).entries['52015'] === 16.7 && kv2[kv2.length - 1][11] === 'photo');
+    // カメラの「その場で読む」で読んだ分（読み取り口が カメラ読み取り シートに書いた行）を取り込んで保存する
+    await pv.click('#btnVidClose'); await pv.waitForTimeout(200);
+    const cs = m.ss.insertSheet('カメラ読み取り');
+    const camRow = (id, st, num, w, sure, at) => [at || new Date(), id, st, 'HRH', num, w, '', '', '11-26', '', '', '20kg', sure ? 'high' : 'medium', sure ? '確定' : '要確認',
+      '速読 2枚', 'claude-haiku-5-5', '', 'iPhone', '', 0.002, 4.1, '', '', 'data:image/jpeg;base64,' + jpg];
+    cs.getRange(1, 1, 1, 24).setValues([new Array(24).fill('h')]);
+    cs.getRange(2, 1, 4, 24).setValues([camRow('a1', '未入力', '52041', 16.7, true), camRow('a2', '未入力', '52042', 16.6, false),
+      camRow('a3', '入力済み', '52043', 16.7, true), camRow('a4', '未入力', '52044', 16.7, true, new Date(Date.now() - 5 * 24 * 3600 * 1000))]);
+    await pv.click('#btnCamReads');
+    for (let i = 0; i < 40 && !(await pv.isVisible('#btnVidSave')); i++) await pv.waitForTimeout(250);
+    const crow = await pv.$$eval('.vid-row', els => els.map(e => ({ t: e.textContent, ck: e.querySelector('input').checked })));
+    check('カメラの読み取り: 未入力の行（直近2日）だけ出し、「確定」はチェック済み・「要確認」はチェックなし', crow.length === 2 && crow[0].t.includes('52041') && crow[0].ck &&
+      crow[1].t.includes('52042') && !crow[1].ck && crow[0].t.includes('カメラ'), JSON.stringify(crow));
+    await pv.click('#btnVidSave'); await pv.waitForTimeout(1500);
+    const cst = cs.getRange(2, 1, 4, 3).getValues().map(r => r[2]);
+    check('カメラの読み取り: 保存すると成績表に入り、その行は「入力済み」になる（要確認の行は残る）', c.getLot(L.lotId).entries['52041'] === 16.7 && c.getLot(L.lotId).entries['52042'] === undefined &&
+      JSON.stringify(cst) === JSON.stringify(['入力済み', '未入力', '入力済み', '未入力']), JSON.stringify(cst));
     // インターバル撮影の連続写真: 撮った順に並べ、同じ場面（赤・赤）は1コマにまとめて、場面ごとに読む
     await pv.click('#btnVidClose'); await pv.waitForTimeout(200);
     global.CLAUDE_REQS = [];
