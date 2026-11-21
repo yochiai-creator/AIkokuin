@@ -278,6 +278,20 @@ function check(name, ok, detail) {
   await sp.waitForTimeout(800);
   const sshots = () => sp.evaluate(() => window.__aikc.shots.length);
   check('シール: 型は出さず、枠は「シールと刻印が通る所」', await sp.evaluate(() => getComputedStyle(document.getElementById('tmpl')).display === 'none' && document.querySelector('#zone .lbl').textContent === 'シールと刻印が通る所'));
+  // 種類ごとに撮り方を覚える: 20kg はシール、50kg はバルブ。切り替えると戻る
+  await sp.click('#btnSet');
+  await sp.selectOption('#sKind', '20kg');
+  await sp.check('input[name=trigger][value=seal]');
+  const z20 = await sp.evaluate(() => JSON.stringify(JSON.parse(localStorage.getItem('aikc.zone'))));
+  await sp.selectOption('#sKind', '50kg');
+  await sp.check('input[name=trigger][value=valve]');
+  await sp.selectOption('#sKind', '20kg');
+  const back20 = await sp.evaluate(() => [document.querySelector('input[name=trigger][value=seal]').checked, JSON.stringify(JSON.parse(localStorage.getItem('aikc.zone')))]);
+  await sp.selectOption('#sKind', '50kg');
+  const back50 = await sp.evaluate(() => document.querySelector('input[name=trigger][value=valve]').checked);
+  check('種類ごとに撮り方を覚える（20kg＝シール・枠もそのまま、50kg＝バルブ）', back20[0] && back20[1] === z20 && back50, JSON.stringify([back20, z20, back50]));
+  await sp.selectOption('#sKind', '20kg');
+  await sp.click('#btnSet');
   await sp.click('#btnRun'); await sp.waitForTimeout(6500);
   check('シール: 容器がないあいだは（床の動かない黒い印があっても）撮らない', (await sshots()) === 0, await sshots());
   const sealPass = async () => {

@@ -179,8 +179,15 @@
   // ---------- 設定（この端末に記憶） ----------
   const store = {
     get: function(k, d) { try { const v = localStorage.getItem('aikc.' + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
-    set: function(k, v) { try { localStorage.setItem('aikc.' + k, JSON.stringify(v)); } catch (e) { /* 記憶できなくても動く */ } }
+    set: function(k, v) {
+      try {
+        localStorage.setItem('aikc.' + k, JSON.stringify(v));
+        // 撮り方は容器の種類ごとにも覚える（20kg は横から・シール、ほかの種類は別の画角、のように使い分ける）
+        if (PER_KIND.indexOf(k) >= 0 && typeof cfg !== 'undefined') localStorage.setItem('aikc.k.' + cfg.kind + '.' + k, JSON.stringify(v));
+      } catch (e) { /* 記憶できなくても動く */ }
+    }
   };
+  const PER_KIND = ['zone', 'trigger', 'crop', 'cropMode', 'mode'];
   const cfg = {
     burst: store.get('burst', 2),
     stillMs: store.get('stillMs', 600),
@@ -1159,7 +1166,15 @@
   Object.keys(KINDS).forEach(function(k) { const o = document.createElement('option'); o.value = k; o.textContent = k; $('sKind').appendChild(o); });
   $('sKind').onchange = function() {
     cfg.kind = this.value; store.set('kind', cfg.kind);
-    fitZoneToTemplate();
+    // この種類で前に使った撮り方があれば戻す。初めての種類は今の撮り方を引き継いで、枠を型の縦横に合わせる
+    const saved = PER_KIND.filter(function(k) { return store.get('k.' + cfg.kind + '.' + k, undefined) !== undefined; });
+    if (saved.length) {
+      saved.forEach(function(k) { cfg[k] = store.get('k.' + cfg.kind + '.' + k, cfg[k]); store.set(k, cfg[k]); });
+      layoutZone();
+    } else {
+      PER_KIND.forEach(function(k) { store.set(k, cfg[k]); });
+      fitZoneToTemplate();
+    }
     S.hist = []; S.pass = null; S.learnUntil = Date.now() + 1000; showCfg();
   };
   function fitZoneToTemplate() {
