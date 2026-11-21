@@ -27,6 +27,7 @@
   #vt::after { content: 'バルブ'; position: absolute; top: 44px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #4fd18b; text-shadow: 0 1px 2px #000; white-space: nowrap; }
   #crop { position: absolute; border: 2px dashed rgba(255,255,255,.9); border-radius: 4px; touch-action: none; }
   #crop .lbl { position: absolute; right: 4px; top: 2px; font-size: 12px; text-shadow: 0 1px 2px #000; }
+  #crop.fixed { pointer-events: none; } #crop.fixed .handle { display: none; }
   #crop .handle { position: absolute; right: -12px; bottom: -12px; width: 24px; height: 24px; border-radius: 50%; background: #fff; border: 2px solid #000; }
   #big { position: fixed; inset: 0; background: rgba(0,0,0,.92); z-index: 8; display: flex; align-items: center; justify-content: center; }
   #big img { max-width: 96vw; max-height: 90vh; }
@@ -194,7 +195,22 @@
     const x = Math.max(0, z.x - z.w * 0.35), y = Math.max(0, z.y - z.h * 1.2);
     return { x: x, y: y, w: Math.min(1, z.x + z.w * 1.35) - x, h: Math.min(1, z.y + z.h * 1.4) - y };
   }
-  function cropRect() { return cfg.cropMode === 'full' ? { x: 0, y: 0, w: 1, h: 1 } : (cfg.crop || autoCrop(rotBox(cfg.zone))); }
+  function cropRect() {
+    if (cfg.cropMode === 'full') return { x: 0, y: 0, w: 1, h: 1 };
+    if (valveMode()) { const v = $('video'); if (v.videoWidth) return valveCrop(v, valveTarget(v)); }
+    return cfg.crop || autoCrop(rotBox(cfg.zone));
+  }
+  function valveMode() { return cfg.mode === 'flow' && cfg.trigger === 'valve'; }
+  // 緑のバルブで撮るときの保存する範囲: バルブを中心に、刻印の一番外の段まで入る正方形。
+  // 容器がどの向きで来ても刻印がまるごと入る（現場の写真で、刻印が反対側に来て外の段が切れていた: 2026-11-21）
+  function valveCrop(v, c) {
+    const vb = kindDef().vb, vw = v.videoWidth, vh = v.videoHeight;
+    const outer = kindDef().lines.reduce(function(m, l) { return Math.max(m, l.r + l.fs); }, 0) * 1.1;
+    const R = outer / vb.w * cfg.zone.w * vw;
+    const x0 = Math.max(0, c.x * vw - R), y0 = Math.max(0, c.y * vh - R);
+    const x1 = Math.min(vw, c.x * vw + R), y1 = Math.min(vh, c.y * vh + R);
+    return { x: x0 / vw, y: y0 / vh, w: Math.max(16, x1 - x0) / vw, h: Math.max(16, y1 - y0) / vh };
+  }
   // 傾いた枠を囲む長方形（映像に対する割合。縦横の比は映像の画素で考える）
   function rotBox(z) {
     if (!z.rot) return z;
@@ -268,6 +284,7 @@
     place($('zone'), cfg.zone);
     $('zone').style.transform = cfg.zone.rot ? 'rotate(' + (cfg.zone.rot * 180 / Math.PI).toFixed(2) + 'deg)' : '';
     $('crop').classList.toggle('hidden', cfg.cropMode === 'full');
+    $('crop').classList.toggle('fixed', valveMode());   // バルブのときは型の大きさで決まる（動かせない）
     place($('crop'), cropRect());
     // 緑のバルブで撮るときは、バルブが来るべき所（型の弧の中心）に印を出す
     const v = $('video'), showVt = cfg.mode === 'flow' && cfg.trigger === 'valve' && v.videoWidth;
@@ -709,13 +726,20 @@
     const g = valveCanvas.getContext('2d', { willReadFrequently: true });
     g.drawImage(v, 0, 0, VW, VH);
     const d = g.getImageData(0, 0, VW, VH).data;
-    let n = 0, sx = 0, sy = 0;
+    let n = 0, sx = 0, sy = 0, sxx = 0, syy = 0, sxy = 0;
     for (let i = 0, k = 0; i < d.length; i += 4, k++) {
       const r = d[i], gr = d[i + 1], b = d[i + 2];
-      if (gr > 60 && gr - Math.max(r, b) > 30 && gr > r * 1.3 && gr > b * 1.2) { n++; sx += k % VW; sy += Math.floor(k / VW); }
+      // バルブの緑だけ（バルブは (74,127,50)〜(66,174,62)、青が低い。床の塗装のくすんだ緑 (89,120,85) は数えない）
+      if (gr > 70 && gr - r > 35 && gr - b > 50) { n++; const x = k % VW, y = Math.floor(k / VW); sx += x; sy += y; sxx += x * x; syy += y * y; sxy += x * y; }
     }
     if (n < VW * VH * 0.004) return null;
-    return { x: (sx / n + 0.5) / VW, y: (sy / n + 0.5) / VH, n: n };
+    // まとまった丸い形だけ（細長い帯は床やラインの塗装）
+    const mx = sx / n, my = sy / n, a = sxx / n - mx * mx, c = syy / n - my * my, bxy = sxy / n - mx * my;
+    const t = (a + c) / 2, dd = Math.sqrt(Math.max(0, (a - c) * (a - c) / 4 + bxy * bxy));
+    if (Math.sqrt((t + dd) / Math.max(0.25, t - dd)) > 3) return null;
+    // 広がりすぎ（ばらばらの緑）も除く: 丸なら 面積 ≒ 4π√(分散の積)
+    if (n < 0.35 * 4 * Math.PI * Math.sqrt(Math.max(0.01, (t + dd) * (t - dd)))) return null;
+    return { x: (mx + 0.5) / VW, y: (my + 0.5) / VH, n: n };
   }
   // バルブが来るべき所: 型の弧の中心（ARC_CX, ARC_CY）を、枠（傾きも）を通して映像の上に移す
   function valveTarget(v) {
@@ -747,7 +771,7 @@
     $('zone').classList.toggle('armed', dist < 0.15);
     setState('バルブが通過中…（型の中心まで ' + Math.round(dist * 100) + '%）');
     // 型の中心に近いほど良い（近すぎるコマは良い方だけ）。型の中心から枠の幅の半分より遠いコマは撮らない
-    if (!p.saved && dist < 0.5) keepCand(p, 1 / (0.02 + dist), now, v);
+    if (!p.saved && dist < 0.5) keepCand(p, 1 / (0.02 + dist), now, v, cfg.cropMode === 'full' ? null : valveCrop(v, f));
     // 型の中心を通り過ぎて離れ始めたら、バルブが画面から消えるのを待たずに保存する（1本で1回）
     if (!p.saved && p.best < 0.25 && dist > p.best + 0.3 && p.cands.length) { p.saved = true; saveCands(p.cands); }
     if (now - p.start > VALVE_PASS_MS) endValvePass(now);
@@ -789,14 +813,14 @@
     }
   }
   // 1本あたりの枚数ぶん、くっきりしたコマを覚える（NEAR_MS 以内のコマは高い方だけ）
-  function keepCand(p, e, now, v) {
+  function keepCand(p, e, now, v, rect) {
     const near = p.cands.filter(function(c) { return now - c.t < NEAR_MS; })[0];
     let slot = null;
     if (near) { if (e <= near.e) return; slot = near; }
     else if (p.cands.length < cfg.burst) { slot = { c: document.createElement('canvas') }; p.cands.push(slot); }
     else { const low = p.cands.reduce(function(a, b) { return a.e <= b.e ? a : b; }); if (e <= low.e) return; slot = low; }
     slot.e = e; slot.t = now; slot.at = new Date(now);
-    const r = drawOut(v, slot.c);
+    const r = drawOut(v, slot.c, rect);
     slot.ox = r.sx; slot.oy = r.sy; slot.vw = v.videoWidth; slot.vh = v.videoHeight;
   }
   function saveCands(cands) {
@@ -840,8 +864,8 @@
     return saveCanvas(c, at).then(function() { setState('撮影しました（' + S.shots.length + ' 枚）', 'ok'); });
   }
   // 保存する範囲だけを、縮めずに写す
-  function drawOut(v, c) {
-    const r = cropRect(), sx = Math.round(r.x * v.videoWidth), sy = Math.round(r.y * v.videoHeight);
+  function drawOut(v, c, rect) {
+    const r = rect || cropRect(), sx = Math.round(r.x * v.videoWidth), sy = Math.round(r.y * v.videoHeight);
     const sw = Math.max(16, Math.round(r.w * v.videoWidth)), sh = Math.max(16, Math.round(r.h * v.videoHeight));
     c.width = sw; c.height = sh;
     c.getContext('2d').drawImage(v, sx, sy, sw, sh, 0, 0, sw, sh);
