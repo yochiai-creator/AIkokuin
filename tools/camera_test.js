@@ -215,7 +215,15 @@ function check(name, ok, detail) {
       const g = cv.getContext('2d');
       g.fillStyle = '#d8d8d8'; g.fillRect(0, 0, 1280, 720);
       g.fillStyle = '#3a3a40'; for (let x = 0; x < 1280; x += 90) g.fillRect(x, 0, 6, 720);   // コンベヤの板（模様）
-      if (window.__vx !== null) { g.fillStyle = '#2e9e3e'; g.beginPath(); g.arc(window.__vx, window.__vy, 45, 0, 7); g.fill(); }
+      if (window.__vx !== null) {
+        // バルブのハンドル: 緑の丸に浮き文字のような模様。__vblur のときはぶれた写り
+        g.save(); if (window.__vblur) g.filter = 'blur(8px)';
+        g.fillStyle = '#2e9e3e'; g.beginPath(); g.arc(window.__vx, window.__vy, 45, 0, 7); g.fill();
+        g.strokeStyle = '#155a20'; g.lineWidth = 2;
+        for (let k = -36; k <= 36; k += 6) { g.beginPath(); g.moveTo(window.__vx - 30, window.__vy + k * 0.8); g.lineTo(window.__vx + 30, window.__vy + k * 0.8); g.stroke(); }
+        g.fillStyle = '#e8e8e8'; g.beginPath(); g.arc(window.__vx, window.__vy, 8, 0, 7); g.fill();
+        g.restore();
+      }
     };
     paint(); setInterval(paint, 33);
     Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: () => Promise.resolve(cv.captureStream(30)) } });
@@ -238,6 +246,9 @@ function check(name, ok, detail) {
   check('バルブ: 次の容器のバルブでも撮る（2本・4枚）', (await vshots()) === 4 && await vp.evaluate(() => window.__aikc.passes) === 2, await vshots());
   await valvePass(Math.min(700, tgt.y * 720 + 330));
   check('バルブ: 型の中心から遠い所を通ったバルブでは撮らない', (await vshots()) === 4, await vshots());
+  await vp.evaluate(() => { window.__vblur = true; });
+  await valvePass(tgt.y * 720);
+  check('バルブ: ひどくぶれたバルブは撮らず、「ぶれて撮れなかった」と知らせる', (await vshots()) === 4 && (await vp.textContent('#state')).includes('ぶれて'), (await vshots()) + ' ' + await vp.textContent('#state'));
   await vp.close();
 
   await browser.close();

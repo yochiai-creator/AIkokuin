@@ -786,6 +786,10 @@
   function pxDist(v, a, b) { const dx = (a.x - b.x) * v.videoWidth, dy = (a.y - b.y) * v.videoHeight; return Math.sqrt(dx * dx + dy * dy); }
   const VALVE_PASS_MS = 20000;   // ラインが止まりながら流れることがある（現場の動画では1本が10秒かけて通った）
   const CENTER = { x: 0.5, y: 0.5 };
+  const VALVE_MIN_SHARP = 7;
+  function blurWarn(p) {
+    if (p && !p.cands.length && p.blurred && p.best < 1.5) setState('ぶれて撮れなかった容器がありました（' + S.passes + ' 本・' + S.shots.length + ' 枚）。iPadを固定するか、ゆっくり流してください', 'warn');
+  }
   function valveFrame(v, now) {
     let all = findValves(v);
     // 撮り終えたバルブは、画面から出ていくまで追いかけて、もう撮らない（止まったラインで同じ容器を撮り直さない）
@@ -806,7 +810,7 @@
     if (!f) {
       S.noValve = (S.noValve || 0) + 1;
       if (S.pass) { S.pass.gone = (S.pass.gone || 0) + 1; if (S.pass.gone >= 4) endValvePass(now); }
-      else setState(S.noValve > 300 ? '緑のバルブが見えません。緑でないときは ⚙「撮るきっかけ」を「刻印の模様」に' : '見張り中: 緑のバルブが画面の真ん中を通ったら撮ります（' + S.passes + ' 本・' + S.shots.length + ' 枚）', S.noValve > 300 ? 'warn' : 'ok');
+      else if (S.noValve >= 0) setState(S.noValve > 300 ? '緑のバルブが見えません。緑でないときは ⚙「撮るきっかけ」を「刻印の模様」に' : '見張り中: 緑のバルブが画面の真ん中を通ったら撮ります（' + S.passes + ' 本・' + S.shots.length + ' 枚）', S.noValve > 300 ? 'warn' : 'ok');
       $('meterBar').style.width = '0%';
       return;
     }
@@ -822,11 +826,14 @@
     setState('バルブが通過中…（真ん中まで ハンドル ' + dist.toFixed(1) + ' 個ぶん）');
     // 真ん中に近いほど良い。ハンドル2個ぶんより遠いコマは撮らない
     // 真ん中に近く、くっきりしているコマほど良い（手持ちだと2枚のうち1枚がぶれていた: 2026-11-21）
-    if (dist < 2) keepCand(p, Math.pow(valveSharp(v, f), 3) / (1 + dist), now, v, cfg.cropMode === 'full' ? null : valveCrop(v, f));
+    // ひどくぶれたコマは撮らない（くっきり具合: 現場のよい写真は12以上、ぶれて読めない写真は4.5）
+    const sh = dist < 2 ? valveSharp(v, f) : 0;
+    if (dist < 2 && sh < VALVE_MIN_SHARP) p.blurred = true;
+    if (dist < 2 && sh >= VALVE_MIN_SHARP) keepCand(p, Math.pow(sh, 3) / (1 + dist), now, v, cfg.cropMode === 'full' ? null : valveCrop(v, f));
     // 真ん中を通り過ぎて離れ始めたら、バルブが画面から消えるのを待たずに保存する
     // （1本あたりの枚数ぶん集まるように、一番近づいてから少し（0.3秒）待つ）
     if (p.best < 1.5 && dist > p.best + 1 && now - p.bestT > 300 && p.cands.length && (p.cands.length >= cfg.burst || dist >= 2)) { finishValve(p, f); return; }
-    if (now - p.start > VALVE_PASS_MS) { if (p.best < 1.5 && p.cands.length) finishValve(p, f); else S.pass = null; }
+    if (now - p.start > VALVE_PASS_MS) { if (p.best < 1.5 && p.cands.length) finishValve(p, f); else { S.pass = null; blurWarn(p); } }
   }
   function finishValve(p, f) {
     S.pass = null; $('vt').classList.remove('armed');
@@ -836,6 +843,7 @@
   function endValvePass(now) {
     const p = S.pass; S.pass = null; $('vt').classList.remove('armed');
     if (p && p.cands.length && p.best < 1.5) saveCands(p.cands);
+    else { blurWarn(p); if (p && p.blurred && !p.cands.length) S.noValve = -150; }   // 警告を5秒ほど出したままにする
   }
 
   function flowFrame() {
