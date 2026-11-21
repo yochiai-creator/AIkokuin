@@ -769,6 +769,20 @@
     const x1 = Math.min(vw, f.x * vw + R), y1 = Math.min(vh, f.y * vh + R);
     return { x: x0 / vw, y: y0 / vh, w: Math.max(16, x1 - x0) / vw, h: Math.max(16, y1 - y0) / vh };
   }
+  // バルブのハンドルのくっきり具合（ハンドルの浮き文字・ぎざぎざの輪郭の強さ）。手ぶれ・流れのぶれで下がる
+  const sharpCanvas = document.createElement('canvas'); sharpCanvas.width = sharpCanvas.height = 160;
+  function valveSharp(v, f) {
+    const r = f.D * 0.6, cx = f.x * v.videoWidth, cy = f.y * v.videoHeight;
+    const g = sharpCanvas.getContext('2d', { willReadFrequently: true });
+    g.drawImage(v, cx - r, cy - r, 2 * r, 2 * r, 0, 0, 160, 160);
+    const d = g.getImageData(0, 0, 160, 160).data;
+    let sum = 0;
+    for (let y = 1; y < 159; y += 2) for (let x = 1; x < 159; x += 2) {
+      const i = (y * 160 + x) * 4, l = d[i + 1];
+      sum += Math.abs(l - d[i + 5]) + Math.abs(l - d[i + 641]);
+    }
+    return sum / (79 * 79);
+  }
   function pxDist(v, a, b) { const dx = (a.x - b.x) * v.videoWidth, dy = (a.y - b.y) * v.videoHeight; return Math.sqrt(dx * dx + dy * dy); }
   const VALVE_PASS_MS = 20000;   // ラインが止まりながら流れることがある（現場の動画では1本が10秒かけて通った）
   const CENTER = { x: 0.5, y: 0.5 };
@@ -807,10 +821,11 @@
     $('vt').classList.toggle('armed', dist < 0.5);
     setState('バルブが通過中…（真ん中まで ハンドル ' + dist.toFixed(1) + ' 個ぶん）');
     // 真ん中に近いほど良い。ハンドル2個ぶんより遠いコマは撮らない
-    if (dist < 2) keepCand(p, 1 / (0.05 + dist), now, v, cfg.cropMode === 'full' ? null : valveCrop(v, f));
+    // 真ん中に近く、くっきりしているコマほど良い（手持ちだと2枚のうち1枚がぶれていた: 2026-11-21）
+    if (dist < 2) keepCand(p, Math.pow(valveSharp(v, f), 3) / (1 + dist), now, v, cfg.cropMode === 'full' ? null : valveCrop(v, f));
     // 真ん中を通り過ぎて離れ始めたら、バルブが画面から消えるのを待たずに保存する
     // （1本あたりの枚数ぶん集まるように、一番近づいてから少し（0.3秒）待つ）
-    if (p.best < 1.5 && dist > p.best + 1 && now - p.bestT > 300 && p.cands.length) { finishValve(p, f); return; }
+    if (p.best < 1.5 && dist > p.best + 1 && now - p.bestT > 300 && p.cands.length && (p.cands.length >= cfg.burst || dist >= 2)) { finishValve(p, f); return; }
     if (now - p.start > VALVE_PASS_MS) { if (p.best < 1.5 && p.cands.length) finishValve(p, f); else S.pass = null; }
   }
   function finishValve(p, f) {

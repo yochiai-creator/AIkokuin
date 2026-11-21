@@ -229,7 +229,7 @@ function check(name, ok, detail) {
   await vp.click('#btnRun'); await vp.waitForTimeout(1300);
   check('バルブ: バルブが見えないあいだは見張って、撮らない', (await vp.textContent('#state')).includes('緑のバルブ') && (await vshots()) === 0, await vp.textContent('#state'));
   const valvePass = async (y) => {
-    for (let x = 1350; x >= -70; x -= 30) { await vp.evaluate(([a, b]) => { window.__vx = a; window.__vy = b; }, [x, y]); await vp.waitForTimeout(33); }
+    for (let x = 1350; x >= -70; x -= 15) { await vp.evaluate(([a, b]) => { window.__vx = a; window.__vy = b; }, [x, y]); await vp.waitForTimeout(33); }
     await vp.evaluate(() => { window.__vx = null; }); await vp.waitForTimeout(500);
   };
   await valvePass(tgt.y * 720);
