@@ -23,6 +23,8 @@
   #tmpl { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
   #tmpl text { fill: rgba(255, 211, 77, .55); stroke: rgba(0,0,0,.35); stroke-width: 1.5; paint-order: stroke; font-family: "OCR B", "OCRB", Menlo, monospace; }
   #tmpl .band { fill: rgba(255, 211, 77, .10); }
+  #vt { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border: 3px solid #4fd18b; border-radius: 50%; pointer-events: none; box-shadow: 0 0 0 2px rgba(0,0,0,.5); }
+  #vt::after { content: 'バルブ'; position: absolute; top: 44px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #4fd18b; text-shadow: 0 1px 2px #000; white-space: nowrap; }
   #crop { position: absolute; border: 2px dashed rgba(255,255,255,.9); border-radius: 4px; touch-action: none; }
   #crop .lbl { position: absolute; right: 4px; top: 2px; font-size: 12px; text-shadow: 0 1px 2px #000; }
   #crop .handle { position: absolute; right: -12px; bottom: -12px; width: 24px; height: 24px; border-radius: 50%; background: #fff; border: 2px solid #000; }
@@ -58,6 +60,7 @@
 <body>
 <div id="stage">
   <video id="video" playsinline muted autoplay></video>
+  <div id="vt" class="hidden"></div>
   <div id="crop"><span class="lbl">保存する範囲</span><span class="handle" id="cropHandle"></span></div>
   <div id="zone"><svg id="tmpl" viewBox="130 70 740 240" preserveAspectRatio="none"></svg><span class="lbl">検知範囲</span><span class="handle" id="handle"></span></div>
   <div id="state">カメラを起動しています…</div>
@@ -79,6 +82,13 @@
   </div>
 </div>
 <div id="settings" class="hidden">
+  <label>撮るきっかけ（流れるとき）</label>
+  <div class="row" style="color:#1b2240;font-size:15px">
+    <label style="margin:0;font-weight:400"><input type="radio" name="trigger" value="valve"> 緑のバルブが型の中心に来たら（おすすめ）</label>
+  </div>
+  <div class="row" style="color:#1b2240;font-size:15px">
+    <label style="margin:0;font-weight:400"><input type="radio" name="trigger" value="stamp"> 刻印の模様が増えたら（背景が無地のとき）</label>
+  </div>
   <label>容器の種類（刻印の型）</label>
   <select id="sKind" style="width:100%;font-size:16px;padding:6px"></select>
   <label>撮り方</label>
@@ -107,7 +117,7 @@
     <button class="btn sub" id="btnCropReset" style="color:#1f2a5c;border-color:#1f2a5c">点線を刻印の枠に合わせ直す</button>
   </div>
   <label>型の傾き <span class="v" id="vRot"></span></label>
-  <input type="range" id="sRot" min="-25" max="25" step="0.5">
+  <input type="range" id="sRot" min="-180" max="180" step="0.5">
   <label style="font-weight:400"><input type="checkbox" id="cAutoFit"> 自動補正（撮るたびに、型の上下・大きさ・傾きを少しずつ実物の刻印に合わせる。反射の多い所では型がずれていくことがあるので、様子を見ながら）</label>
   <div id="zoomBox" class="hidden">
     <label>ズーム <span class="v" id="vZoom"></span></label>
@@ -118,6 +128,7 @@
   </div>
   <div class="note">
     iPadを固定して使います（枠をドラッグで移動、右下の丸で大きさ）。<br>
+    <b>撮るきっかけ</b>: 「緑のバルブ」では、型を刻印に合わせると、バルブが来るべき所に緑の円（バルブ）が出ます。緑のハンドルがそこを通ったときに撮ります（刻印が薄くても撮れる）。<br>
     <b>流れる</b>: 「容器の種類」を選ぶと、黄色い枠の中にその容器の<b>刻印の型</b>（神鋼機器工業の刻印配置図の並び）が出ます。映像の刻印に型が重なるように、枠を動かして大きさを合わせてください。型の文字が通る帯の中だけを見て、刻印が通ったら撮ります。<br>
     白い点線は<b>保存する範囲</b>です。刻印・総重量シール・キャップが入るように合わせると、刻印が大きく写って読み取りが正確で安くなります（黄色い枠を動かすと点線もついてきます。点線を自分で動かすと、それ以後は別々に動きます）。<br>
     <b>🎯 自動で合わせる</b>: 型を<b>だいたい</b>刻印に重ねてから、刻印が写っているときに押すと、型の位置・大きさ・傾きを細かく合わせます。打刻は淡いので、反射の縁や1段ずれた所に合ってしまうことがあります。合わなければ「↩ 元に戻す」で戻し、枠のドラッグと「型の傾き」で手で合わせてください。<br>
@@ -161,6 +172,7 @@
     kind: store.get('kind', '50kg'),    // 刻印の型（KINDS）
     autoFit: store.get('autoFit', false),  // 自動補正（撮るたびに型を実物に合わせる）。現場の写真で反射や1段ずれに寄ることがあったので既定はオフ
     mode: store.get('mode', 'flow'),    // flow: 流れる（刻印が枠を通ったら） / stop: 止まる（止まったら）
+    trigger: store.get('trigger', 'valve'),  // 流れるときに撮るきっかけ: valve＝緑のバルブ（既定）/ stamp＝刻印の模様
     cropMode: store.get('cropMode', 'around'),   // around: 刻印のまわりだけ保存 / full: 画面全体
     crop: store.get('crop', null),               // 保存する範囲（null なら刻印の枠から自動）
     zoom: store.get('zoom', null), torch: store.get('torch', false)
@@ -186,13 +198,15 @@
     // 流れるモード
     hist: [], prevSm: null, learnUntil: 0, pass: null, passes: 0 };
   window.__aikc = S;   // 動作確認用
+  window.__aikcDebug = {};   // 動作確認用（バルブが来るべき所など）
 
   function setState(text, kind) { const el = $('state'); el.textContent = text; el.className = kind || ''; }
 
   // ---------- カメラ ----------
   function startCamera() {
     if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) return showErr('このブラウザではカメラが使えません。iPad の Safari で開いてください。');
-    navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } })
+    // できるだけ大きく撮る（刻印は打刻で淡く、1920×1080 の動画ではかろうじて見える程度だった: 2026-11-21 の現場動画）
+    navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 3840 }, height: { ideal: 2160 } } })
       .then(function(st) {
         S.stream = st;
         setupTrack(st.getVideoTracks()[0]);
@@ -243,6 +257,10 @@
     $('zone').style.transform = cfg.zone.rot ? 'rotate(' + (cfg.zone.rot * 180 / Math.PI).toFixed(2) + 'deg)' : '';
     $('crop').classList.toggle('hidden', cfg.cropMode === 'full');
     place($('crop'), cropRect());
+    // 緑のバルブで撮るときは、バルブが来るべき所（型の弧の中心）に印を出す
+    const v = $('video'), showVt = cfg.mode === 'flow' && cfg.trigger === 'valve' && v.videoWidth;
+    $('vt').classList.toggle('hidden', !showVt);
+    if (showVt) { const b = videoBox(), t = valveTarget(v); $('vt').style.left = (b.left + t.x * b.w) + 'px'; $('vt').style.top = (b.top + t.y * b.h) + 'px'; }
   }
   window.addEventListener('resize', layoutZone);
   // 枠をドラッグで移動、右下の丸で大きさ
@@ -667,9 +685,70 @@
     const vals = S.hist.map(function(h) { return h.v; }).sort(function(x, y) { return x - y; });
     return vals.length ? vals[Math.floor(vals.length * 0.3)] : 0;
   }
+  // ---------- 緑のバルブで撮る ----------
+  // 現場の動画（20kg、2026-11-21）では、刻印は打刻で淡く、枠の中の模様は刻印よりコンベヤの金属板のほうがずっと多かった
+  // （刻印が来ると模様が「減る」）。そこで、どの容器にもある緑のバルブのハンドルを目印にする。
+  // 刻印の型はバルブを中心にした弧なので、型を刻印に合わせればバルブが来るべき所（型の弧の中心）が決まる。
+  // 緑のハンドルがそこへ一番近づいたコマ（刻印がちょうど型に重なる瞬間）を、1本あたりの枚数ぶん撮る。
+  const VW = 160, VH = 90;
+  const valveCanvas = document.createElement('canvas'); valveCanvas.width = VW; valveCanvas.height = VH;
+  // 緑のハンドルの位置（映像に対する割合）と大きさ。見えなければ null
+  function findValve(v) {
+    const g = valveCanvas.getContext('2d', { willReadFrequently: true });
+    g.drawImage(v, 0, 0, VW, VH);
+    const d = g.getImageData(0, 0, VW, VH).data;
+    let n = 0, sx = 0, sy = 0;
+    for (let i = 0, k = 0; i < d.length; i += 4, k++) {
+      const r = d[i], gr = d[i + 1], b = d[i + 2];
+      if (gr > 60 && gr - Math.max(r, b) > 30 && gr > r * 1.3 && gr > b * 1.2) { n++; sx += k % VW; sy += Math.floor(k / VW); }
+    }
+    if (n < VW * VH * 0.004) return null;
+    return { x: (sx / n + 0.5) / VW, y: (sy / n + 0.5) / VH, n: n };
+  }
+  // バルブが来るべき所: 型の弧の中心（ARC_CX, ARC_CY）を、枠（傾きも）を通して映像の上に移す
+  function valveTarget(v) {
+    const z = cfg.zone, vb = kindDef().vb, vw = v.videoWidth, vh = v.videoHeight;
+    const ux = (ARC_CX - (vb.x + vb.w / 2)) / vb.w * z.w * vw, uy = (ARC_CY - (vb.y + vb.h / 2)) / vb.h * z.h * vh;
+    const rot = z.rot || 0, cs = Math.cos(rot), sn = Math.sin(rot);
+    return { x: ((z.x + z.w / 2) * vw + ux * cs - uy * sn) / vw, y: ((z.y + z.h / 2) * vh + ux * sn + uy * cs) / vh };
+  }
+  window.__aikcDebug.valveTarget = function() { return valveTarget($('video')); };
+  const VALVE_PASS_MS = 20000;   // ラインが止まりながら流れることがある（現場の動画では1本が10秒かけて通った）
+  function valveFrame(v, now) {
+    const f = findValve(v), t = valveTarget(v);
+    const zw = cfg.zone.w;
+    if (!f) {
+      S.noValve = (S.noValve || 0) + 1;
+      if (S.pass) { S.pass.gone = (S.pass.gone || 0) + 1; if (S.pass.gone >= 4) endValvePass(now); }
+      else setState(S.noValve > 300 ? '緑のバルブが見えません。緑でないときは ⚙「撮るきっかけ」を「刻印の模様」に' : '見張り中: 緑のバルブが型の中心に来たら撮ります（' + S.passes + ' 本・' + S.shots.length + ' 枚）', S.noValve > 300 ? 'warn' : 'ok');
+      $('meterBar').style.width = '0%';
+      return;
+    }
+    S.noValve = 0;
+    // 型の中心からの距離（枠の幅を1として）
+    const dx = (f.x - t.x) * v.videoWidth / (zw * v.videoWidth), dy = (f.y - t.y) * v.videoHeight / (zw * v.videoWidth);
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    $('meterBar').style.width = Math.max(0, Math.min(100, (1 - dist) * 100)) + '%';
+    if (!S.pass) S.pass = { start: now, cands: [], below: 0, gone: 0, best: 9 };
+    const p = S.pass; p.gone = 0;
+    if (dist < p.best) p.best = dist;
+    $('zone').classList.toggle('armed', dist < 0.15);
+    setState('バルブが通過中…（型の中心まで ' + Math.round(dist * 100) + '%）');
+    // 型の中心に近いほど良い（近すぎるコマは良い方だけ）。型の中心から枠の幅の半分より遠いコマは撮らない
+    if (!p.saved && dist < 0.5) keepCand(p, 1 / (0.02 + dist), now, v);
+    // 型の中心を通り過ぎて離れ始めたら、バルブが画面から消えるのを待たずに保存する（1本で1回）
+    if (!p.saved && p.best < 0.25 && dist > p.best + 0.3 && p.cands.length) { p.saved = true; saveCands(p.cands); }
+    if (now - p.start > VALVE_PASS_MS) endValvePass(now);
+  }
+  function endValvePass(now) {
+    const p = S.pass; S.pass = null; $('zone').classList.remove('armed');
+    if (p && !p.saved && p.cands.length && p.best < 0.25) saveCands(p.cands);
+  }
+
   function flowFrame() {
     if (!S.running || cfg.mode !== 'flow') return;
     const v = $('video'), now = Date.now();
+    if (cfg.trigger === 'valve') { if (now >= S.learnUntil) valveFrame(v, now); return; }
     const f = zoneTexture(); if (!f) return;
     const blur = S.prevSm ? diff(f.sm, S.prevSm) : 0; S.prevSm = f.sm;
     if (!S.pass) S.hist.push({ t: now, v: f.tex });   // 通過中の値はふだんの値に入れない
@@ -871,6 +950,7 @@
   function showCfg() {
     Array.prototype.forEach.call(document.querySelectorAll('input[name=mode]'), function(r) { r.checked = r.value === cfg.mode; });
     Array.prototype.forEach.call(document.querySelectorAll('input[name=cropMode]'), function(r) { r.checked = r.value === cfg.cropMode; });
+    Array.prototype.forEach.call(document.querySelectorAll('input[name=trigger]'), function(r) { r.checked = r.value === cfg.trigger; });
     if (cfg.zoom !== null) $('vZoom').textContent = Number(cfg.zoom).toFixed(1) + ' 倍';
     if ($('sRot')) { const d = (cfg.zone.rot || 0) * 180 / Math.PI; $('sRot').value = d.toFixed(1); $('vRot').textContent = d.toFixed(1) + '°'; }
     layoutZone();
@@ -913,6 +993,9 @@
     S.hist = []; S.pass = null; S.learnUntil = Date.now() + 1000;
   };
   function showRot() { const d = (cfg.zone.rot || 0) * 180 / Math.PI; $('sRot').value = d.toFixed(1); $('vRot').textContent = d.toFixed(1) + '°'; }
+  Array.prototype.forEach.call(document.querySelectorAll('input[name=trigger]'), function(r) {
+    r.onchange = function() { cfg.trigger = this.value; store.set('trigger', cfg.trigger); S.pass = null; S.hist = []; S.learnUntil = Date.now() + 1000; showCfg(); };
+  });
   $('cAutoFit').checked = !!cfg.autoFit;
   $('cAutoFit').onchange = function() { cfg.autoFit = this.checked; store.set('autoFit', cfg.autoFit); };
   $('btnCropReset').onclick = function() { cfg.crop = null; store.set('crop', null); showCfg(); };

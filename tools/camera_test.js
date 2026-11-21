@@ -101,6 +101,7 @@ function check(name, ok, detail) {
   const fp = await browser.newPage({ viewport: { width: 1180, height: 820 } });
   fp.on('pageerror', e => check('ページでJSエラーなし(流れる)', false, e.message));
   await fp.addInitScript(() => {
+    try { localStorage.setItem('aikc.trigger', '"stamp"'); } catch (e) { /* 既定のまま */ }
     const cv = document.createElement('canvas'); cv.width = 640; cv.height = 360;
     window.__x = null;   // 刻印の左端（null なら刻印なし＝なめらかな塗装だけ）
     const paint = () => {
@@ -147,6 +148,7 @@ function check(name, ok, detail) {
   const ap = await browser.newPage({ viewport: { width: 1180, height: 820 } });
   ap.on('pageerror', e => check('ページでJSエラーなし(自動補正)', false, e.message));
   await ap.addInitScript(() => {
+    try { localStorage.setItem('aikc.trigger', '"stamp"'); } catch (e) { /* 既定のまま */ }
     const cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720;
     window.__truth = { dx: 30, dy: 40, s: 1.12, rot: 8 * Math.PI / 180 };
     window.__stamp = true;
@@ -200,6 +202,42 @@ function check(name, ok, detail) {
   const z4 = await zoneNow();
   check('自動補正: 「型の傾き」で手で傾けられる', z4 && Math.abs(z4.rot * 180 / Math.PI - 6) < 0.01 && /^rotate\(6(\.0+)?deg\)$/.test(await ap.evaluate(() => document.getElementById('zone').style.transform)), JSON.stringify(z4));
   await ap.close();
+
+  // ---- 緑のバルブで撮る（既定）: 緑の円（バルブのハンドル）が型の中心を通ったら撮る。遠くを通ったら撮らない
+  const vp = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+  vp.on('pageerror', e => check('ページでJSエラーなし(バルブ)', false, e.message));
+  await vp.addInitScript(() => {
+    // 20kg の型を画面の下寄りに置く（バルブが来るべき所＝型の弧の中心が画面の中に来るように）
+    try { localStorage.setItem('aikc.kind', '"20kg"'); localStorage.setItem('aikc.zone', JSON.stringify({ x: 0.35, y: 0.605, w: 0.3, h: 0.179 })); } catch (e) { /* 既定のまま */ }
+    const cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720;
+    window.__vx = null; window.__vy = 0;
+    const paint = () => {
+      const g = cv.getContext('2d');
+      g.fillStyle = '#d8d8d8'; g.fillRect(0, 0, 1280, 720);
+      g.fillStyle = '#3a3a40'; for (let x = 0; x < 1280; x += 90) g.fillRect(x, 0, 6, 720);   // コンベヤの板（模様）
+      if (window.__vx !== null) { g.fillStyle = '#2e9e3e'; g.beginPath(); g.arc(window.__vx, window.__vy, 45, 0, 7); g.fill(); }
+    };
+    paint(); setInterval(paint, 33);
+    Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: () => Promise.resolve(cv.captureStream(30)) } });
+  });
+  await vp.goto('file://' + path.join(__dirname, '..', 'docs', 'camera', 'index.html'));
+  await vp.waitForTimeout(800);
+  const vshots = () => vp.evaluate(() => window.__aikc.shots.length);
+  check('バルブ: 撮るきっかけの既定は「緑のバルブ」', await vp.evaluate(() => document.querySelector('input[name=trigger][value=valve]').checked));
+  const tgt = await vp.evaluate(() => window.__aikcDebug.valveTarget());
+  await vp.click('#btnRun'); await vp.waitForTimeout(1300);
+  check('バルブ: バルブが見えないあいだは見張って、撮らない', (await vp.textContent('#state')).includes('緑のバルブ') && (await vshots()) === 0, await vp.textContent('#state'));
+  const valvePass = async (y) => {
+    for (let x = 1350; x >= -70; x -= 30) { await vp.evaluate(([a, b]) => { window.__vx = a; window.__vy = b; }, [x, y]); await vp.waitForTimeout(33); }
+    await vp.evaluate(() => { window.__vx = null; }); await vp.waitForTimeout(500);
+  };
+  await valvePass(tgt.y * 720);
+  check('バルブ: 緑のバルブが型の中心を通ったら、1本あたりの枚数（2枚）撮る', (await vshots()) === 2 && await vp.evaluate(() => window.__aikc.passes) === 1, await vshots());
+  await valvePass(tgt.y * 720);
+  check('バルブ: 次の容器のバルブでも撮る（2本・4枚）', (await vshots()) === 4 && await vp.evaluate(() => window.__aikc.passes) === 2, await vshots());
+  await valvePass(Math.min(700, tgt.y * 720 + 330));
+  check('バルブ: 型の中心から遠い所を通ったバルブでは撮らない', (await vshots()) === 4, await vshots());
+  await vp.close();
 
   await browser.close();
   const failed = results.filter(r => !r).length;
