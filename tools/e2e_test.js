@@ -1390,6 +1390,12 @@ function check(name, ok, detail) {
     await pv.click('#btnVidSave'); await pv.waitForTimeout(1500);
     const ent = c.getLot(L.lotId).entries;
     check('動画: チェックした3本を刻印のWで保存（種別違いは保存しない）', ent['52011'] === 16.7 && ent['52012'] === 16.7 && ent['52013'] === 16.6 && ent['52014'] === undefined, JSON.stringify(ent));
+    const lg = m.ss.getSheetByName('読み取りログ'), lgv = lg.getRange(2, 1, lg.getLastRow() - 1, 21).getValues();
+    check('テストのログ: AIの読み取り1回ごとに「読み取りログ」へ（速読5・精読3、動画の秒つき）', lgv.length === 8 && lgv.filter(r => r[4] === 'fast').length === 5 &&
+      lgv.filter(r => r[4] === 'precise').length === 3 && lgv.every(r => r[2] === 'video' && /秒/.test(r[3]) && r[1]), JSON.stringify(lgv.map(r => r[2] + ':' + r[3] + ':' + r[4] + ':' + r[9])));
+    const sm = m.ss.getSheetByName('読み取りまとめ'), smv = sm.getRange(2, 1, sm.getLastRow() - 1, 14).getValues();
+    check('テストのログ: 一覧の結果（読み終わり・保存）を容器ごとに「読み取りまとめ」へ', smv.filter(r => r[3] === '読み終わり').length === 4 &&
+      smv.filter(r => r[3] === '保存' && r[10] === '保存済み').length === 3 && smv.some(r => r[3] === '読み終わり（全体）' && /費用/.test(r[7])), JSON.stringify(smv.map(r => r[3] + ':' + r[5] + ':' + r[7] + ':' + r[10])));
     const ks = m.ss.getSheetByName('刻印記録'), kv = ks.getRange(2, 1, ks.getLastRow() - 1, 23).getValues();
     check('動画: 刻印記録に「video」で残す', kv.length === 3 && kv.every(r => r[11] === 'video'), JSON.stringify(kv.map(r => r[2] + ':' + r[11])));
     await pv.click('#btnVidAll'); await pv.waitForTimeout(100);

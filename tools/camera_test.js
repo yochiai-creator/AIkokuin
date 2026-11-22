@@ -312,10 +312,13 @@ function check(name, ok, detail) {
   check('シール: 次の容器でも撮る（2本・4枚）', (await sshots()) === 4 && await sp.evaluate(() => window.__aikc.passes) === 2, await sshots());
   await sp.waitForTimeout(800);
   const reads = await sp.$$eval('#reads .rd', els => els.map(e => e.textContent));
-  const sent = apiReqs.filter(b => !b.ping);
+  const sent = apiReqs.filter(b => b.images);
   check('その場で読む: 1本ごとに写真2枚を合言葉つきで送り、番号・Wと「確定／要確認」を画面の下に出す',
     sent.length === 2 && sent.every(b => b.token === 'aikotoba' && b.images.length === 2 && b.thumb) && reads.length === 2 &&
     reads[0].includes('HXR 15378') && reads[0].includes('W16.5') && reads[0].includes('確定') && reads[1].includes('要確認'), JSON.stringify(reads) + ' ' + sent.length);
+  const evs = apiReqs.filter(b => b.events).reduce((a, b) => a.concat(b.events), []).concat(await sp.evaluate(() => window.__aikcDebug.logQ()));
+  check('テストのログ: 1本ごとの「撮影」と「読み取り」（かかった秒数つき）をカメラログに残す', evs.filter(e => e.type === '撮影').length === 2 &&
+    evs.filter(e => e.type === '読み取り').length === 2 && evs.some(e => /撮ってから [0-9.]+秒/.test(e.detail)) && evs.every(e => e.trigger === 'seal'), JSON.stringify(evs.map(e => e.type + ':' + e.detail)));
   const gray = await sp.evaluate(async () => {
     const f = window.__aikc.shots[0], u = URL.createObjectURL(f), im = new Image(); im.src = u; await im.decode();
     const c = document.createElement('canvas'); c.width = im.width; c.height = im.height; const g = c.getContext('2d'); g.drawImage(im, 0, 0);

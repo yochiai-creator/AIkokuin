@@ -24,13 +24,15 @@ function doPost(e) {
   try { req = JSON.parse(e && e.postData && e.postData.contents || '{}'); } catch (err) { return json_({ ok: false, error: '送られた内容が読めません' }); }
   if (!tokenOk_(req.token)) return json_({ ok: false, error: '合言葉が違います（LPG刻印カメラの ⚙「その場で読む」を確かめてください）' });
   if (req.ping) return json_({ ok: true, ping: true });
+  if (req.events) { logCameraEvents_(req.events, req.device); return json_({ ok: true }); }   // カメラの撮影の判断のログ
   try {
     const images = (req.images || []).slice(0, 4);
     if (!images.length) throw new Error('写真がありません');
     // まず速読（安いモデルで、同じ容器の写真をまとめて）。決めきれなければ精読（高精度のモデル）
-    let r = readKokuin({ images: images, tier: 'fast' }), cost = r.cost_usd || 0, how = '速読 ' + images.length + '枚';
+    const log = { session: String(req.device || '').slice(0, 30), how: 'camera', label: String(req.shotAt || '') };
+    let r = readKokuin({ images: images, tier: 'fast', log: log }), cost = r.cost_usd || 0, how = '速読 ' + images.length + '枚';
     if (!sureRead_(r)) {
-      const p = readKokuin({ images: images, tier: 'precise' });
+      const p = readKokuin({ images: images, tier: 'precise', log: log });
       cost += p.cost_usd || 0; how = '精読 ' + images.length + '枚';
       if (p.readable || !r.readable) r = p;
     }

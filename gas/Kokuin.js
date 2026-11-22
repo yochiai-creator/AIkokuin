@@ -132,7 +132,68 @@ function readKokuin(req) {
   out.frames = images.length;
   out.cost_usd = kokuinCost_(model, res.usage);
   out.ms = Date.now() - started;
+  kokuinLog_(req, out, images.length);
   return out;
+}
+
+// ---------- テストのログ（スクリーンショットの代わり。スプレッドシートに残し、あとでまとめて見る） ----------
+// 読み取りログ: AIの読み取り1回ごと。読み取りまとめ: AIkokuin の一覧の結果（容器ごと）。カメラログ: LPG刻印カメラの撮影の判断。
+// スクリプトプロパティ KOKUIN_LOG=off で止められる
+const KOKUIN_LOG_SHEETS = {
+  '読み取りログ': ['日時', 'セッション', '読み方', 'コマ', '段階', 'モデル', '枚数', '読めた', '記号', '番号', 'W', 'シール', 'W検算',
+    '種別', '確からしさ', '秒', '費用(USD)', '年月', 'キャップ', 'グループNo照合', '備考'],
+  '読み取りまとめ': ['日時', 'セッション', '読み方', 'できごと', '記号', '番号', 'W', '状態', '読み方の詳細', 'チェック', '保存', 'コマ/時刻', '確からしさ', '備考'],
+  'カメラログ': ['日時', '端末', '撮影時刻', 'できごと', '撮るきっかけ', '容器の種類', '本目', '枚数', '真ん中までの距離', 'くっきり', '詳細']
+};
+function kokuinLogOn_() {
+  try { return PropertiesService.getScriptProperties().getProperty('KOKUIN_LOG') !== 'off'; } catch (e) { return true; }
+}
+function kokuinLogSheet_(name) {
+  const ss = getSpreadsheet_();
+  let sh = ss.getSheetByName(name);
+  if (!sh) {
+    sh = ss.insertSheet(name);
+    const h = KOKUIN_LOG_SHEETS[name];
+    sh.getRange(1, 1, 1, h.length).setValues([h]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+function kokuinLogRows_(name, rows) {
+  if (!rows.length || !kokuinLogOn_()) return;
+  try {
+    const sh = kokuinLogSheet_(name);
+    const w = KOKUIN_LOG_SHEETS[name].length;
+    rows = rows.map(function(r) { r = r.slice(0, w); while (r.length < w) r.push(''); return r; });
+    const lock = LockService.getScriptLock();
+    lock.waitLock(20000);
+    try { sh.getRange(sh.getLastRow() + 1, 1, rows.length, w).setValues(rows); } finally { lock.releaseLock(); }
+  } catch (e) { /* ログが書けなくても読み取りは続ける */ }
+}
+function kokuinLog_(req, out, n) {
+  const l = req.log || {};
+  kokuinLogRows_('読み取りログ', [[new Date(), String(l.session || ''), String(l.how || ''), String(l.label || ''), out.tier, out.model, n,
+    out.readable ? 'はい' : 'いいえ', out.symbol, "'" + out.number, out.tare_kg, out.seal_kg, out.w_check, out.kind, out.confidence,
+    Math.round(out.ms / 100) / 10, out.cost_usd, "'" + (out.manufactured || ''), "'" + (out.cap_number || ''), out.group_check, out.note]]);
+}
+// 画面から呼ぶ: 一覧の結果（読み終わったとき・保存したとき）
+function logKokuinSummary(req) {
+  req = req || {};
+  const now = new Date();
+  kokuinLogRows_('読み取りまとめ', (req.items || []).slice(0, 300).map(function(it) {
+    return [now, String(req.session || ''), String(req.how || ''), String(req.event || ''), String(it.symbol || ''), "'" + String(it.number || ''),
+      String(it.w || ''), String(it.status || ''), String(it.detail || ''), it.checked ? '✓' : '', it.saved ? '保存済み' : '', String(it.t || ''),
+      String(it.confidence || ''), String(it.note || '')];
+  }).concat(req.message ? [[now, String(req.session || ''), String(req.how || ''), String(req.event || '') + '（全体）', '', '', '', String(req.message)]] : []));
+  return { ok: true };
+}
+// 読み取り口（gas-api）から呼ぶ: カメラの撮影の判断
+function logCameraEvents_(events, device) {
+  const now = new Date();
+  kokuinLogRows_('カメラログ', (events || []).slice(0, 200).map(function(e) {
+    return [now, String(device || ''), String(e.at || ''), String(e.type || ''), String(e.trigger || ''), String(e.kind || ''), e.pass || '',
+      e.shots || '', e.best === undefined ? '' : e.best, e.sharp === undefined ? '' : e.sharp, String(e.detail || '')];
+  }));
 }
 
 // 1回の費用の目安（USD）

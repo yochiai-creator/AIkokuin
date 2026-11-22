@@ -869,21 +869,23 @@
     // ひどくぶれたコマは撮らない（くっきり具合: 現場のよい写真は12以上、ぶれて読めない写真は4.5）
     const sh = dist < 2 ? valveSharp(v, f) : 0;
     if (dist < 2 && sh < VALVE_MIN_SHARP) p.blurred = true;
+    if (sh > (p.sh || 0)) p.sh = sh;
     if (dist < 2 && sh >= VALVE_MIN_SHARP) keepCand(p, Math.pow(sh, 3) / (1 + dist), now, v, cfg.cropMode === 'full' ? null : valveCrop(v, f));
     // 真ん中を通り過ぎて離れ始めたら、バルブが画面から消えるのを待たずに保存する
     // （1本あたりの枚数ぶん集まるように、一番近づいてから少し（0.3秒）待つ）
     if (p.best < 1.5 && dist > p.best + 1 && now - p.bestT > 300 && p.cands.length && (p.cands.length >= cfg.burst || dist >= 2)) { finishValve(p, f); return; }
-    if (now - p.start > VALVE_PASS_MS) { if (p.best < 1.5 && p.cands.length) finishValve(p, f); else { S.pass = null; blurWarn(p); } }
+    if (now - p.start > VALVE_PASS_MS) { if (p.best < 1.5 && p.cands.length) finishValve(p, f); else { S.pass = null; blurWarn(p); camLog('撮らず', p, skipWhy(p, 1.5) + '（20秒たった）'); } }
   }
   function finishValve(p, f) {
+    camLog('撮影', p, 'バルブの直径 ' + Math.round(f.D) + '画素');
     S.pass = null; $('vt').classList.remove('armed');
     S.hold = Object.assign({ miss: 0 }, f);
     saveCands(p.cands);
   }
   function endValvePass(now) {
     const p = S.pass; S.pass = null; $('vt').classList.remove('armed');
-    if (p && p.cands.length && p.best < 1.5) saveCands(p.cands);
-    else { blurWarn(p); if (p && p.blurred && !p.cands.length) S.noValve = -150; }   // 警告を5秒ほど出したままにする
+    if (p && p.cands.length && p.best < 1.5) { camLog('撮影', p, 'バルブが見えなくなってから'); saveCands(p.cands); }
+    else { blurWarn(p); if (p) camLog('撮らず', p, skipWhy(p, 1.5)); if (p && p.blurred && !p.cands.length) S.noValve = -150; }   // 警告を5秒ほど出したままにする
   }
 
   // ---------- 総重量シールで撮る ----------
@@ -971,16 +973,19 @@
     $('vt').classList.toggle('armed', dist < 0.15);
     setState('容器が通過中…（シールが画面の真ん中まで ' + Math.round(dist * 100) + '%）');
     if (f.n > lo && dist < 0.5) keepCand(p, f.sharp * f.sharp / (0.1 + dist), now, v);
+    if (f.n > lo && f.sharp > (p.sh || 0)) p.sh = f.sharp;
     // 動いて来たかたまりだけ（画面の25%以上動いた）。床の印のように動かない黒では撮らない
     const moved = p.maxX - p.minX >= 0.25 || p.maxY - p.minY >= 0.25;
     const done = function() {
       const mv = alongX ? f.cx - p.x0 : f.cy - p.y0;
       if (Math.abs(mv) >= 0.15) S.sealDir = { x: alongX, sign: mv > 0 ? 1 : -1 };   // 流れる向きを覚える
+      camLog('撮影', p, (alongX ? '左右' : '上下') + 'に流れる・印刷のかたまり ' + f.n);
       S.pass = null; S.sealHold = 1; S.sealAxisX = alongX; $('vt').classList.remove('armed'); saveCands(p.cands); };
     // 真ん中を過ぎて離れ始めたら保存（1本あたりの枚数ぶん集まるよう少し待つ）
     if (moved && p.best < 0.2 && dist > p.best + 0.3 && now - p.bestT > 300 && p.cands.length && (p.cands.length >= cfg.burst || dist >= 0.5)) return done();
     if (p.below >= 3 || now - p.start > VALVE_PASS_MS) {
       if (moved && p.best < 0.3 && p.cands.length) return done();
+      camLog('撮らず', p, !moved ? '動いていない（床の印など）' : skipWhy(p, 0.3));
       S.pass = null; $('vt').classList.remove('armed');
     }
   }
@@ -1079,6 +1084,32 @@
     c.getContext('2d').drawImage(v, sx, sy, sw, sh, 0, 0, sw, sh);
     return { sx: sx, sy: sy };
   }
+  // ---------- テストのログ（スクリーンショットの代わり） ----------
+  // 1本ごとの「撮った／撮らなかった（理由）／読み取り結果」を、その場で読むとき（⚙ の合言葉あり）に
+  // 読み取り口へまとめて送り、AI刻印 の「カメラログ」シートに残す
+  const devId = store.get('devId', '') || (function() { const d = 'cam-' + Math.random().toString(36).slice(2, 6); store.set('devId', d); return d; })();
+  S.logQ = [];
+  function skipWhy(p, near) {
+    if (!p) return '';
+    if (p.blurred && !p.cands.length) return 'ぶれていた';
+    if (p.best >= near) return '真ん中まで来なかった';
+    if (!p.cands.length) return '撮れるコマがなかった';
+    return '';
+  }
+  function camLog(type, p, detail) {
+    const d = new Date();
+    S.logQ.push({ at: d.toTimeString().slice(0, 8) + '.' + ('00' + d.getMilliseconds()).slice(-3), type: type, trigger: cfg.trigger, kind: cfg.kind,
+      pass: S.passes + (type === '撮影' ? 1 : 0), shots: p ? p.cands.length : '', best: p && p.best < 9 ? +p.best.toFixed(2) : '',
+      sharp: p && p.sh ? +p.sh.toFixed(1) : '', detail: detail || '' });
+    if (S.logQ.length > 300) S.logQ.splice(0, S.logQ.length - 300);
+  }
+  setInterval(function() {
+    if (!cfg.live || !cfg.apiToken || !S.logQ.length) return;
+    const ev = S.logQ.splice(0, S.logQ.length);
+    apiPost({ events: ev, device: devId }).catch(function() { S.logQ = ev.concat(S.logQ); });   // 送れなければ次に
+  }, 15000);
+  window.__aikcDebug.logQ = function() { return S.logQ; };
+
   // ---------- その場で読む ----------
   // 1本ぶんの写真（1本あたりの枚数）を読み取り口へ送り、数秒後に番号・Wを画面の下に出す。
   // 1本ずつ並行して送るので、ラインが10秒おきに流れても前の容器の読み取りを待たない
@@ -1099,9 +1130,10 @@
   function liveRead(cands) {
     const cs = cands.slice().sort(function(a, b) { return a.t - b.t; });
     const item = { id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), thumb: jpegOf(cs[0].c, 240, 0.7), state: 'wait', text: '読み取り中…', tag: '読取中' };
+    item.sent = Date.now();
     S.reads.unshift(item); S.reads.length = Math.min(S.reads.length, 30); showReads();
     const body = {
-      id: item.id, shotAt: cs[0].at.toISOString(), device: navigator.userAgent.slice(0, 60), thumb: item.thumb,
+      id: item.id, shotAt: cs[0].at.toISOString(), device: devId, thumb: item.thumb,
       images: cs.slice(0, 4).map(function(c) { return jpegOf(c.c, 1568, 0.88).split(',')[1]; })
     };
     const send = function(n) {
@@ -1114,7 +1146,7 @@
       item.text = (r.symbol ? r.symbol + ' ' : '') + r.number + (r.tare_kg ? '　W' + r.tare_kg + (r.w_from_seal ? '（シール）' : '') : '　W?');
       item.state = r.sure ? 'ok' : 'warn'; item.tag = r.sure ? '確定' : '要確認';
     }).catch(function(e) { item.state = 'ng'; item.tag = 'エラー'; item.text = '送れませんでした（' + (e && e.message || e) + '）'; })
-      .then(showReads);
+      .then(function() { camLog('読み取り', null, item.tag + '：' + item.text + '（撮ってから ' + ((Date.now() - item.sent) / 1000).toFixed(1) + '秒）'); showReads(); });
   }
   function showReads() {
     $('reads').innerHTML = S.reads.slice(0, 4).map(function(it) {

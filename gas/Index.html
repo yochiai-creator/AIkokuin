@@ -322,7 +322,7 @@
 <div class="sp-sub">読み込み中…</div></div>
 <script>window.SPLASH_T0 = Date.now();</script>
 <header>
-  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v15（記号が読めないコマも同じ容器にまとめる）</span></h1>
+  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v16（テストのログをシートに残す）</span></h1>
   <span class="user" id="workerBadge"></span>
   <span class="user" id="user"></span>
   <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
@@ -2283,7 +2283,7 @@
     vidReset();
     const video = files.filter(function(f) { return /^video\//.test(f.type); })[0];
     const photos = files.filter(function(f) { return /^image\//.test(f.type); });
-    V.stop = false; V.how = video ? 'video' : 'photo';
+    V.stop = false; V.how = video ? 'video' : 'photo'; V.session = sessionId();
     $('vidPanel').classList.remove('hidden'); $('vidList').innerHTML = '';
     vidButtons({ btnVidStop: true }); vidBar(0);
     vidMsg(video ? '動画を読み込んでいます…' : '写真 ' + photos.length + ' 枚を読み込んでいます…');
@@ -2504,8 +2504,8 @@
     const v = V.video;
     return vidSeek(v, p.t).then(function() { return { image: grabJpeg(v, v.videoWidth, v.videoHeight), thumb: thumbOf(v, v.videoWidth, v.videoHeight) }; });
   }
-  function readCall(images, tier) {
-    return call('readKokuin', { images: images, tier: tier, hints: camHints() }).then(function(r) {
+  function readCall(images, tier, label) {
+    return call('readKokuin', { images: images, tier: tier, hints: camHints(), log: { session: V.session, how: V.how, label: label || '' } }).then(function(r) {
       V.cost += r.cost_usd || 0; if (tier === 'precise') V.nPrecise++; else V.nFast++;
       return r;
     }, function(e) { return { error: (e && e.message) || String(e) }; });
@@ -2523,7 +2523,7 @@
       const p = picks[next++];
       return grabPick(p).then(function(g) {
         p.thumb = g.thumb;
-        const job = readCall([g.image], 'fast').then(function(r) {
+        const job = readCall([g.image], 'fast', V.how === 'video' ? p.t.toFixed(1) + '秒' : p.t + '枚目').then(function(r) {
           V.reads.push({ p: p, r: r }); done++;
           vidBar(0.3 + 0.5 * done / total); vidMsg('速読中… ' + done + ' / ' + total + ' コマ');
         });
@@ -2544,7 +2544,7 @@
           .sort(function(a, b) { return a.t - b.t; });
         const imgs = [];
         return ps.reduce(function(pr, p) { return pr.then(function() { return grabPick(p).then(function(g) { imgs.push(g.image); }); }); }, Promise.resolve())
-          .then(function() { return readCall(imgs, 'precise'); })
+          .then(function() { return readCall(imgs, 'precise', ps.map(function(p) { return V.how === 'video' ? p.t.toFixed(1) + '秒' : p.t + '枚目'; }).join(' ')); })
           .then(function(r) {
             if (r.error) { it.error = r.error; return; }
             it.precise = ps.length;
@@ -2556,8 +2556,19 @@
       return precise();
     }).then(function() {
       V.running = false;
-      vidJudge(); vidRender();
+      vidJudge(); vidRender(); logSummary('読み終わり');
     });
+  }
+  // テストのログ: 一覧の結果をスプレッドシート（読み取りまとめ）に残す（スクリーンショットの代わり）
+  function sessionId() { const d = new Date(); return d.getFullYear() + ('0' + (d.getMonth() + 1)).slice(-2) + ('0' + d.getDate()).slice(-2) + '-' + d.toTimeString().slice(0, 8) + '-' + (worker() || ''); }
+  function logSummary(event) {
+    const items = V.items.map(function(it) {
+      const st = vidStatus(it);
+      return { symbol: it.r.symbol, number: it.r.number, w: it.r.tare_kg + (it.r.w_from_seal ? '（シール）' : ''), status: st[0],
+        detail: it.camId ? 'カメラ ' + (it.camHow || '') : it.fastOk ? '速読 ' + it.rs.length + 'コマ一致' : it.precise ? '精読 ' + it.precise + 'コマ' : '速読 ' + it.rs.length + 'コマ',
+        checked: it.checked, saved: it.saved, t: V.how === 'video' && typeof it.t === 'number' ? it.t.toFixed(1) + '秒' : it.t, confidence: it.r.confidence, note: it.r.note };
+    });
+    call('logKokuinSummary', { session: V.session, how: V.how, event: event, items: items, message: $('vidMsg').textContent }).catch(function() { /* ログが書けなくても続ける */ });
   }
 
   const CONF_RANK = { high: 3, medium: 2, low: 1 };
@@ -2678,6 +2689,7 @@
     if (saved) beep(true);
     vidRender();
     vidMsg(saved + ' 本を保存しました' + (skipped ? '（' + skipped + ' 本は保存しませんでした。理由は一覧に）' : ''), saved ? 'ok' : 'warn');
+    logSummary('保存');
     render();
   }
 
@@ -2703,7 +2715,7 @@
   $('btnCamReads').onclick = function() {
     this.blur();
     if (S.stage !== 'num') resetEntry('容器番号を入力', 'info');
-    vidReset(); V.how = 'camera';
+    vidReset(); V.how = 'camera'; V.session = sessionId();
     $('vidPanel').classList.remove('hidden'); $('vidList').innerHTML = '';
     vidButtons({}); vidBar(0.3); vidMsg('カメラの読み取りを取り寄せています…');
     call('cameraReads', {}).then(function(rows) {
@@ -2712,7 +2724,7 @@
           picks: [], rs: [x.read], fastOk: !!x.read.sure, camHow: x.read.how || '' };
       });
       V.cost = rows.reduce(function(a, x) { return a + (Number(x.read.cost_usd) || 0); }, 0);
-      vidJudge(); vidRender();
+      vidJudge(); vidRender(); logSummary('カメラの読み取りを取り寄せ');
       if (!V.items.length) vidMsg('カメラで読んだ分で、まだ入力していないものはありません（LPG刻印カメラの ⚙「撮ったらすぐ読む」）', 'warn');
     }).catch(function(e) { vidMsg('取り寄せられませんでした: ' + (e && e.message || e), 'err'); });
   };
