@@ -30,9 +30,10 @@ function doPost(e) {
     if (!images.length) throw new Error('写真がありません');
     // まず速読（安いモデルで、同じ容器の写真をまとめて）。決めきれなければ精読（高精度のモデル）
     const log = { session: String(req.device || '').slice(0, 30), how: 'camera', label: String(req.shotAt || '') };
-    let r = readKokuin({ images: images, tier: 'fast', log: log }), cost = r.cost_usd || 0, how = '速読 ' + images.length + '枚';
+    const hints = lotHints_();   // 登録済みロットの記号・番号の範囲（読みの手がかり。写真に見える文字を優先させる）
+    let r = readKokuin({ images: images, tier: 'fast', log: log, hints: hints }), cost = r.cost_usd || 0, how = '速読 ' + images.length + '枚';
     if (!sureRead_(r)) {
-      const p = readKokuin({ images: images, tier: 'precise', log: log });
+      const p = readKokuin({ images: images, tier: 'precise', log: log, hints: hints });
       cost += p.cost_usd || 0; how = '精読 ' + images.length + '枚';
       if (p.readable || !r.readable) r = p;
     }
@@ -78,6 +79,24 @@ function appendCamera_(id, r, req) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ロットシートの新しい40件（記号・開始番号・終了番号・容器区分）。1分は覚えておく
+function lotHints_() {
+  const cache = CacheService.getScriptCache();
+  try { const c = cache.get('lotHints'); if (c) return JSON.parse(c); } catch (e) { /* 読み直す */ }
+  let out = [];
+  try {
+    const sh = getSpreadsheet_().getSheetByName('ロット');
+    if (sh && sh.getLastRow() >= 2) {
+      const n = Math.min(40, sh.getLastRow() - 1);
+      out = sh.getRange(sh.getLastRow() - n + 1, 3, n, 4).getDisplayValues()
+        .filter(function(r) { return r[0] && r[1]; })
+        .map(function(r) { return { prefix: r[0], start: r[1], end: r[2], kind: r[3] }; });
+    }
+    cache.put('lotHints', JSON.stringify(out), 60);
+  } catch (e) { /* 手がかりなしで読む */ }
+  return out;
 }
 
 function json_(o) {

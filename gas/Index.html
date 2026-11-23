@@ -290,6 +290,8 @@
     padding: 10px; font-size: 17px; font-weight: 700; }
   .cambtn.sub { flex: 0 0 auto; background: #fff; color: var(--navy); font-size: 14px; font-weight: 400; padding: 10px 8px; white-space: nowrap; }
   .cambtn { min-width: 0; white-space: nowrap; }
+  .cam-auto { font-size: 12px; color: var(--muted); margin: -4px 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cam-auto.ok { color: var(--ok); font-weight: 700; } .cam-auto.warn { color: var(--warn); font-weight: 700; }
   /* 動画から読む: 一覧（画面いっぱい） */
   #vidPanel { position: fixed; inset: 0; z-index: 50; background: var(--bg); overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 12px 16px 40px; }
   #vidPanel h2 { margin: 4px 0 8px; font-size: 20px; color: var(--navy); }
@@ -322,7 +324,7 @@
 <div class="sp-sub">読み込み中…</div></div>
 <script>window.SPLASH_T0 = Date.now();</script>
 <header>
-  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v16（テストのログをシートに残す）</span></h1>
+  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v17（カメラの読み取りを全自動で入れる）</span></h1>
   <span class="user" id="workerBadge"></span>
   <span class="user" id="user"></span>
   <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
@@ -431,6 +433,7 @@
         <button class="cambtn sub" id="btnCamApp" tabindex="-1">📷 自動撮影</button>
         <button class="cambtn sub" id="btnCamReads" tabindex="-1" title="LPG刻印カメラが撮ってすぐ読んだ分">📋 読んだ分</button>
       </div>
+      <div id="camAuto" class="cam-auto">📷 カメラの読み取りを自動で入れます（確定した分）</div>
       <input type="file" id="vidShoot" accept="video/*,image/*" capture="environment" class="hidden">
       <input type="file" id="vidFile" accept="video/*,image/*" multiple class="hidden">
       <div class="field" id="fldNum">
@@ -2608,15 +2611,16 @@
   function vidJudge() {
     const count = {};
     V.items.forEach(function(it) { count[it.key] = (count[it.key] || 0) + 1; });
-    V.items.forEach(function(it) {
-      it.dup = count[it.key] > 1;
-      it.m = matchKokuin(it.r);
-      it.entered = it.m.hit && it.m.hit.lot.entries[it.m.hit.serial] !== undefined;
-      it.sure = it.fastOk || (it.preciseOk && it.r.confidence === 'high');
-      it.canSave = !!it.m.hit && !it.entered && !!it.r.tare_kg && it.r.w_check !== 'NG' && !it.error;
-      it.checked = it.canSave && it.sure && !it.m.warn && !it.dup;
-      it.saved = false;
-    });
+    V.items.forEach(function(it) { judgeOne(it, count[it.key] > 1); });
+  }
+  function judgeOne(it, dup) {
+    it.dup = dup;
+    it.m = matchKokuin(it.r);
+    it.entered = it.m.hit && it.m.hit.lot.entries[it.m.hit.serial] !== undefined;
+    it.sure = it.fastOk || (it.preciseOk && it.r.confidence === 'high');
+    it.canSave = !!it.m.hit && !it.entered && !!it.r.tare_kg && it.r.w_check !== 'NG' && !it.error;
+    it.checked = it.canSave && it.sure && !it.m.warn && !it.dup;
+    it.saved = false;
   }
 
   function vidStatus(it) {
@@ -2665,25 +2669,62 @@
   });
 
   // 6) チェックした分を保存（刻印のWを質量として）。標準から大きく外れるWは保存せずに残す
+  // 1本を保存する（刻印のWを質量として）。ロックされている・入力済み・質量の範囲外・標準から大きく外れるWは保存しない → false
+  function saveOne(it, how) {
+    const lot = it.m.hit.lot, serial = it.m.hit.serial, mass = Math.round(Number(it.r.tare_kg) * 10) / 10;
+    if (lockedBy(lot) || lot.entries[serial] !== undefined || !(mass >= MASS_MIN && mass <= MASS_MAX)) { it.checked = false; it.skipWhy = '入力済みかロット使用中か質量の範囲外'; return false; }
+    const med = median(lot), typ = S.typical[lot.kind];
+    if ((med !== null && Math.abs(mass - med) > DEVIATION_KG + 1e-9) || (med === null && typ && Math.abs(mass - typ) > TYPICAL_DEVIATION_KG + 1e-9)) {
+      it.checked = false; it.skipWhy = 'Wが標準から離れている'; it.r.note = (it.r.note ? it.r.note + ' / ' : '') + 'Wが標準から離れているので保存しませんでした'; return false;
+    }
+    enqueue({ lotId: lot.lotId, serial: serial, mass: mass, missing: false, repair: false, ngInput: '', worker: worker(), device: $('fDevice').value.trim(), overwrite: '', seal: false });
+    lot.entries[serial] = mass;
+    S.localOps.push({ lotId: lot.lotId, serial: serial, mass: mass, t: Date.now() });
+    S.lastMass = mass; S.lastByLot[lot.lotId] = mass; S.lastKey = lot.lotId + '|' + serial;
+    call('saveKokuin', { lotId: lot.lotId, serial: serial, read: it.r, how: how, worker: worker(), device: $('fDevice').value.trim() })
+      .catch(function() { /* 記録できなくても入力は続く */ });
+    it.saved = true;
+    return true;
+  }
+
+  // ---------- カメラの読み取りを自動で入れる（全自動） ----------
+  // 入力画面を開いているあいだ、15秒ごとに「カメラ読み取り」の未入力の行を取りに行き、
+  // 確定・ロットの範囲内・未入力・Wが標準どおりの容器は、そのまま成績表に入れる（一覧から保存するときと同じ点検）。
+  // それ以外は「要確認」にして理由を残す（「📋 読んだ分」で確かめてテンキーか一覧から入れる）
+  const CAM_AUTO_MS = window.__camAutoMs || 15000;
+  S.camSeen = {}; S.camAutoBusy = false; S.camAutoN = 0;
+  function camAutoOn() { try { return localStorage.getItem('aik.camAuto') !== 'off'; } catch (e) { return true; } }
+  function camAutoShow(text, kind) { const el = $('camAuto'); el.textContent = text; el.className = 'cam-auto' + (kind ? ' ' + kind : ''); }
+  function camAutoTick() {
+    if (S.camAutoBusy || !camAutoOn() || $('entry').classList.contains('hidden') || !$('vidPanel').classList.contains('hidden') || !worker()) return;
+    if (document.visibilityState === 'hidden') return;
+    S.camAutoBusy = true;
+    call('cameraReads', { status: '未入力' }).then(function(rows) {
+      const fresh = (rows || []).filter(function(x) { return !S.camSeen[x.id]; });
+      if (!fresh.length) return;
+      const done = [], review = [], msgs = [];
+      fresh.forEach(function(x) {
+        S.camSeen[x.id] = true;
+        const it = { key: x.read.number, r: x.read, camId: x.id, rs: [x.read], fastOk: !!x.read.sure };
+        judgeOne(it, false);
+        const name = (x.read.symbol ? x.read.symbol + ' ' : '') + x.read.number + (x.read.tare_kg ? ' W' + x.read.tare_kg : '');
+        if (it.checked && saveOne(it, 'camera-auto')) { done.push(x.id); msgs.push(name); S.camAutoN++; }
+        else review.push({ id: x.id, why: it.skipWhy || vidStatus(it)[0] });
+      });
+      if (done.length) call('markCameraReads', { ids: done, worker: worker(), status: '自動入力' }).catch(function() { /* 次に */ });
+      if (review.length) call('markCameraReads', { ids: review.map(function(r) { return r.id; }), reasons: review.map(function(r) { return r.why; }), status: '要確認' }).catch(function() { /* 次に */ });
+      if (done.length) { beep(true); render(); }
+      camAutoShow('📷 自動入力 ' + S.camAutoN + ' 本' + (msgs.length ? '（今: ' + msgs.join('・') + '）' : '') + (review.length ? '　要確認 ' + review.length + ' 本 →「📋 読んだ分」' : ''), review.length ? 'warn' : 'ok');
+    }).catch(function() { /* 取りに行けなければ次に */ }).then(function() { S.camAutoBusy = false; });
+  }
+  setInterval(camAutoTick, CAM_AUTO_MS);
+
   function vidSave() {
     if (S.stage !== 'num') resetEntry('容器番号を入力', 'info');
     let saved = 0, skipped = 0; const camDone = [];
     V.items.forEach(function(it) {
       if (!it.checked || it.saved || !it.canSave) return;
-      const lot = it.m.hit.lot, serial = it.m.hit.serial, mass = Math.round(Number(it.r.tare_kg) * 10) / 10;
-      if (lockedBy(lot) || lot.entries[serial] !== undefined || !(mass >= MASS_MIN && mass <= MASS_MAX)) { skipped++; it.checked = false; return; }
-      const med = median(lot), typ = S.typical[lot.kind];
-      if ((med !== null && Math.abs(mass - med) > DEVIATION_KG + 1e-9) || (med === null && typ && Math.abs(mass - typ) > TYPICAL_DEVIATION_KG + 1e-9)) {
-        it.checked = false; it.r.note = (it.r.note ? it.r.note + ' / ' : '') + 'Wが標準から離れているので保存しませんでした'; skipped++; return;
-      }
-      enqueue({ lotId: lot.lotId, serial: serial, mass: mass, missing: false, repair: false, ngInput: '', worker: worker(), device: $('fDevice').value.trim(), overwrite: '', seal: false });
-      lot.entries[serial] = mass;
-      S.localOps.push({ lotId: lot.lotId, serial: serial, mass: mass, t: Date.now() });
-      S.lastMass = mass; S.lastByLot[lot.lotId] = mass; S.lastKey = lot.lotId + '|' + serial;
-      call('saveKokuin', { lotId: lot.lotId, serial: serial, read: it.r, how: V.how, worker: worker(), device: $('fDevice').value.trim() })
-        .catch(function() { /* 記録できなくても入力は続く */ });
-      it.saved = true; saved++;
-      if (it.camId) camDone.push(it.camId);
+      if (saveOne(it, V.how)) { saved++; if (it.camId) camDone.push(it.camId); } else skipped++;
     });
     if (camDone.length) call('markCameraReads', { ids: camDone, worker: worker() }).catch(function() { /* 印をつけられなくても入力は済んでいる */ });
     if (saved) beep(true);
@@ -2718,7 +2759,7 @@
     vidReset(); V.how = 'camera'; V.session = sessionId();
     $('vidPanel').classList.remove('hidden'); $('vidList').innerHTML = '';
     vidButtons({}); vidBar(0.3); vidMsg('カメラの読み取りを取り寄せています…');
-    call('cameraReads', {}).then(function(rows) {
+    call('cameraReads', { status: 'all' }).then(function(rows) {
       V.items = (rows || []).map(function(x) {
         return { key: x.read.number, r: x.read, thumb: x.thumb || '', t: x.at, camId: x.id,
           picks: [], rs: [x.read], fastOk: !!x.read.sure, camHow: x.read.how || '' };

@@ -354,8 +354,9 @@ function kokuinSheet_() {
 
 // ---------- LPG刻印カメラの「その場で読む」で読んだ分（gas-api の読み取り口が「カメラ読み取り」シートに書く） ----------
 const CAMERA_READ_SHEET = 'カメラ読み取り';
-// 画面から呼ぶ: まだ入力していない行（直近2日）を古い順に返す
-function cameraReads() {
+// 画面から呼ぶ: まだ入力していない行（直近2日）を古い順に返す。req.status: '未入力'（自動入力用）／'all'（未入力と要確認）
+function cameraReads(req) {
+  const want = req && req.status === '未入力' ? ['未入力'] : ['未入力', '要確認'];
   const sh = getSpreadsheet_().getSheetByName(CAMERA_READ_SHEET);
   if (!sh || sh.getLastRow() < 2) return [];
   const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 24).getValues();
@@ -363,7 +364,7 @@ function cameraReads() {
   const s = function(v) { return v === null || v === undefined ? '' : String(v); };
   rows.forEach(function(x) {
     const at = x[0] instanceof Date ? x[0] : new Date(x[0]);
-    if (s(x[2]) !== '未入力' || !(at.getTime() >= since)) return;
+    if (want.indexOf(s(x[2])) < 0 || !(at.getTime() >= since)) return;
     const read = {
       readable: /^\d{5,}$/.test(s(x[4])), symbol: s(x[3]), number: s(x[4]), tare_kg: s(x[5]) === '' ? '' : Number(x[5]).toFixed(1),
       volume_l: s(x[6]), test_pressure_mpa: s(x[7]), manufactured: s(x[8]), ym: kokuinYm_(s(x[8])), seal_kg: s(x[9]), w_check: s(x[10]),
@@ -371,13 +372,14 @@ function cameraReads() {
       cost_usd: Number(x[19]) || 0, cap_number: s(x[21]), group_check: s(x[22]), w_from_seal: s(x[10]) === 'シールから', other: ''
     };
     if (!read.readable) return;
-    out.push({ id: s(x[1]), at: Utilities.formatDate(at, 'Asia/Tokyo', 'HH:mm:ss'), read: read, thumb: s(x[23]) });
+    out.push({ id: s(x[1]), at: Utilities.formatDate(at, 'Asia/Tokyo', 'HH:mm:ss'), read: read, thumb: s(x[23]), status: s(x[2]) });
   });
   return out;
 }
-// 画面から呼ぶ: 成績表に入れた行に「入力済み」の印をつける
+// 画面から呼ぶ: 成績表に入れた行に「入力済み」（自動なら「自動入力」）、入れられなかった行に「要確認」と理由の印をつける
 function markCameraReads(req) {
-  const ids = (req && req.ids || []).map(String);
+  const ids = (req && req.ids || []).map(String), reasons = req && req.reasons || [];
+  const status = ['入力済み', '自動入力', '要確認'].indexOf(req && req.status) >= 0 ? req.status : '入力済み';
   const sh = getSpreadsheet_().getSheetByName(CAMERA_READ_SHEET);
   if (!sh || !ids.length || sh.getLastRow() < 2) return { ok: true, n: 0 };
   const lock = LockService.getScriptLock();
@@ -385,7 +387,14 @@ function markCameraReads(req) {
   try {
     const col = sh.getRange(2, 2, sh.getLastRow() - 1, 2).getValues();
     let n = 0;
-    col.forEach(function(x, i) { if (ids.indexOf(String(x[0])) >= 0 && x[1] === '未入力') { sh.getRange(i + 2, 3).setValue('入力済み'); n++; } });
+    col.forEach(function(x, i) {
+      const k = ids.indexOf(String(x[0]));
+      if (k < 0 || !(x[1] === '未入力' || (x[1] === '要確認' && status !== '要確認'))) return;
+      sh.getRange(i + 2, 3).setValue(status); n++;
+      if (status === '要確認' && reasons[k]) {
+        const c = sh.getRange(i + 2, 17); c.setValue((c.getValue() ? c.getValue() + ' / ' : '') + '自動入力できない: ' + reasons[k]);
+      }
+    });
     return { ok: true, n: n };
   } finally {
     lock.releaseLock();

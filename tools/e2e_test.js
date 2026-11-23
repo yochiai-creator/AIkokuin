@@ -1352,11 +1352,12 @@ function check(name, ok, detail) {
     ];
     const pv = await browser.newPage({ viewport: { width: 820, height: 1180 } });
     pv.on('pageerror', e => check('ページでJSエラーなし(動画)', false, e.message));
+
     await pv.exposeFunction('__gas', (fn, arg) => {
       try { const v = c[fn](JSON.parse(arg)); return JSON.stringify({ v: JSON.parse(JSON.stringify(v === undefined ? null : v)) }); }
       catch (e) { return JSON.stringify({ err: e.message }); }
     });
-    await pv.setContent(html); await pv.waitForTimeout(500);
+    await pv.setContent(html.replace('<head>', '<head><script>window.__camAutoMs = 1e9;</script>')); await pv.waitForTimeout(500);   // 自動入力は別のページで確かめる
     await pv.selectOption('#fWorker', '山田'); await pv.fill('#fDevice', 'iPad-V');
     check('動画: ホーム画面に「🎬 撮って読む」がある', await pv.isVisible('#btnStartCam') && !(await pv.isDisabled('#btnStartCam')));
     // 5場面（色と文字が違う）を1.2秒ずつ録る
@@ -1432,6 +1433,26 @@ function check(name, ok, detail) {
     const cst = cs.getRange(2, 1, 4, 3).getValues().map(r => r[2]);
     check('カメラの読み取り: 保存すると成績表に入り、その行は「入力済み」になる（要確認の行は残る）', c.getLot(L.lotId).entries['52041'] === 16.7 && c.getLot(L.lotId).entries['52042'] === undefined &&
       JSON.stringify(cst) === JSON.stringify(['入力済み', '未入力', '入力済み', '未入力']), JSON.stringify(cst));
+
+    // 全自動: 入力画面を開いているあいだ、確定・ロットの範囲内・Wが標準どおりの読み取りはそのまま成績表に入れ、それ以外は「要確認」と理由
+    cs.getRange(6, 1, 3, 24).setValues([camRow('b1', '未入力', '52051', 16.7, true), camRow('b2', '未入力', '52052', 16.7, false), camRow('b3', '未入力', '99999', 16.7, true)]);
+    const pa = await browser.newPage({ viewport: { width: 820, height: 1180 } });
+    pa.on('pageerror', e => check('ページでJSエラーなし(自動入力)', false, e.message));
+    await pa.exposeFunction('__gas', (fn, arg) => {
+      try { const v = c[fn](JSON.parse(arg)); return JSON.stringify({ v: JSON.parse(JSON.stringify(v === undefined ? null : v)) }); }
+      catch (e) { return JSON.stringify({ err: e.message }); }
+    });
+    await pa.setContent(html.replace('<head>', '<head><script>window.__camAutoMs = 400;</script>')); await pa.waitForTimeout(500);
+    await pa.selectOption('#fWorker', '山田'); await pa.fill('#fDevice', 'iPad-A');
+    await pa.click('#btnStart'); await pa.waitForTimeout(500);
+    for (let i = 0; i < 40 && c.getLot(L.lotId).entries['52051'] === undefined; i++) await pa.waitForTimeout(250);
+    await pa.waitForTimeout(2500);
+    const bst = cs.getRange(6, 1, 3, 17).getValues();
+    check('全自動: 確定した読み取りは押さなくても成績表に入り「自動入力」になる', c.getLot(L.lotId).entries['52051'] === 16.7 && bst[0][2] === '自動入力', JSON.stringify(bst.map(r => r[2])));
+    check('全自動: 確定でない・ロットの範囲外は入れずに「要確認」と理由を残す', c.getLot(L.lotId).entries['52052'] === undefined && bst[1][2] === '要確認' && bst[2][2] === '要確認' &&
+      /自動入力できない/.test(bst[2][16]), JSON.stringify(bst.map(r => r[2] + ':' + r[16])));
+    check('全自動: 入力画面に自動で入れた本数を出す', /自動入力 1 本/.test(await pa.textContent('#camAuto')), await pa.textContent('#camAuto'));
+    await pa.close();
     // インターバル撮影の連続写真: 撮った順に並べ、同じ場面（赤・赤）は1コマにまとめて、場面ごとに読む
     await pv.click('#btnVidClose'); await pv.waitForTimeout(200);
     global.CLAUDE_REQS = [];

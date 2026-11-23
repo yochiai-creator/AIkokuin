@@ -231,11 +231,11 @@ function check(name, ok, detail) {
   await vp.goto('file://' + path.join(__dirname, '..', 'docs', 'camera', 'index.html'));
   await vp.waitForTimeout(800);
   const vshots = () => vp.evaluate(() => window.__aikc.shots.length);
-  check('バルブ: 撮るきっかけの既定は「緑のバルブ」', await vp.evaluate(() => document.querySelector('input[name=trigger][value=valve]').checked));
+  check('撮るきっかけの既定は「自動」（緑のバルブが見えればバルブで撮る）', await vp.evaluate(() => document.querySelector('input[name=trigger][value=auto]').checked));
   const tgt = { x: 0.5, y: 0.5 };   // バルブは画面の真ん中を通ったら撮る（型は使わない）
   check('バルブ: 型と「自動で合わせる」は出さない（型を合わせなくてよい）', await vp.evaluate(() => document.getElementById('zone').classList.contains('hidden') && document.getElementById('btnFit').classList.contains('hidden')));
   await vp.click('#btnRun'); await vp.waitForTimeout(1300);
-  check('バルブ: バルブが見えないあいだは見張って、撮らない', (await vp.textContent('#state')).includes('緑のバルブ') && (await vshots()) === 0, await vp.textContent('#state'));
+  check('バルブ: 容器が来ないあいだは見張って、撮らない', (await vp.textContent('#state')).includes('見張り中') && (await vshots()) === 0, await vp.textContent('#state'));
   const valvePass = async (y) => {
     for (let x = 1350; x >= -70; x -= 15) { await vp.evaluate(([a, b]) => { window.__vx = a; window.__vy = b; }, [x, y]); await vp.waitForTimeout(33); }
     await vp.evaluate(() => { window.__vx = null; }); await vp.waitForTimeout(500);
