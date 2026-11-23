@@ -279,9 +279,14 @@ function check(name, ok, detail) {
   await sp.route('https://script.google.com/**', route => {
     const b = JSON.parse(route.request().postData() || '{}'); apiReqs.push(b);
     route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify(b.ping ? { ok: b.token === 'aikotoba' } : { ok: true, id: b.id, read: { readable: true, symbol: 'HXR', number: '15378', tare_kg: '16.5', sure: apiReqs.length >= 2 } }) });
+      body: JSON.stringify(b.ping ? { ok: b.token === 'aikotoba' } : { ok: true, id: b.id, read: { readable: true, symbol: 'HXR', number: '15378', tare_kg: '16.5', sure: apiReqs.length >= 2, framing: 'too_small' } }) });
   });
-  await sp.addInitScript(() => { localStorage.setItem('aikc.live', 'true'); localStorage.setItem('aikc.apiToken', '"aikotoba"'); });
+  await sp.addInitScript(() => {
+    localStorage.setItem('aikc.live', 'true'); localStorage.setItem('aikc.apiToken', '"aikotoba"');
+    // ズームを外から変えられるカメラのふり
+    MediaStreamTrack.prototype.getCapabilities = function() { return { zoom: { min: 1, max: 5, step: 0.1 } }; };
+    MediaStreamTrack.prototype.applyConstraints = function(c) { window.__zoomSet = c && c.advanced && c.advanced[0] && c.advanced[0].zoom; return Promise.resolve(); };
+  });
   await sp.goto('file://' + path.join(__dirname, '..', 'docs', 'camera', 'index.html'));
   await sp.waitForTimeout(800);
   const sshots = () => sp.evaluate(() => window.__aikc.shots.length);
@@ -316,6 +321,8 @@ function check(name, ok, detail) {
   check('その場で読む: 1本ごとに写真2枚を合言葉つきで送り、番号・Wと「確定／要確認」を画面の下に出す',
     sent.length === 2 && sent.every(b => b.token === 'aikotoba' && b.images.length === 2 && b.thumb) && reads.length === 2 &&
     reads[0].includes('HXR 15378') && reads[0].includes('W16.5') && reads[0].includes('確定') && reads[1].includes('要確認'), JSON.stringify(reads) + ' ' + sent.length);
+  check('写り具合: 「文字が小さい」が2本続いたら、ズームを自動で少し上げて案内を出す', (await sp.textContent('#guide')).includes('ズームを上げました（1.2 倍') &&
+    await sp.evaluate(() => window.__zoomSet === 1.2 && !document.getElementById('guide').classList.contains('hidden')), (await sp.textContent('#guide')) + ' ' + await sp.evaluate(() => window.__zoomSet));
   const evs = apiReqs.filter(b => b.events).reduce((a, b) => a.concat(b.events), []).concat(await sp.evaluate(() => window.__aikcDebug.logQ()));
   check('テストのログ: 1本ごとの「撮影」と「読み取り」（かかった秒数つき）をカメラログに残す', evs.filter(e => e.type === '撮影').length === 2 &&
     evs.filter(e => e.type === '読み取り').length === 2 && evs.some(e => /撮ってから [0-9.]+秒/.test(e.detail)) && evs.every(e => e.trigger === 'seal'), JSON.stringify(evs.map(e => e.type + ':' + e.detail)));

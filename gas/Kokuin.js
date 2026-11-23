@@ -26,6 +26,9 @@ const KOKUIN_IMAGE_MAX_CHARS = 4 * 1024 * 1024;   // base64で4MBまで（画面
 const KOKUIN_KINDS = ['5kg', '8kg', '10kg', '20kg', '20kg三部制', '30kg', '40kg', '50kg', '50kg S付', '不明'];
 
 // 返してもらう形（構造化出力）。数値も刻印のまま文字で受け取り、読めない項目は空文字
+// 写り具合: ok＝刻印の全部が十分な大きさで写っている / cut_left・cut_right・cut_top・cut_bottom＝刻印の段がその端で切れている /
+// cut_many＝2方向以上で切れている（近すぎる） / too_small＝全部写っているが文字が小さい（遠すぎる） / no_stamp＝刻印が写っていない
+const KOKUIN_FRAMING = ['ok', 'cut_left', 'cut_right', 'cut_top', 'cut_bottom', 'cut_many', 'too_small', 'no_stamp'];
 const KOKUIN_SCHEMA = {
   type: 'object',
   properties: {
@@ -41,9 +44,10 @@ const KOKUIN_SCHEMA = {
     cap_number: { type: 'string', description: 'バルブのキャップ・保護フィルムに手書きされたグループNo（数字だけ。例 369）。写っていなければ空文字' },
     other: { type: 'string', description: 'そのほかに読めた刻印（LPガス・菱形マーク・※など以外の記号）を空白区切りで' },
     confidence: { type: 'string', enum: ['high', 'medium', 'low'], description: '容器番号とWの読みの確からしさ' },
-    note: { type: 'string', description: '迷った桁・反射・重ね打ちなど（短く。なければ空文字）' }
+    note: { type: 'string', description: '迷った桁・反射・重ね打ちなど（短く。なければ空文字）' },
+    framing: { type: 'string', enum: KOKUIN_FRAMING, description: '写り具合（カメラの向き・ズームを自動で直すのに使う）。刻印の段が画面の端で切れていればその向き' }
   },
-  required: ['readable', 'symbol', 'number', 'volume_l', 'tare_kg', 'seal_kg', 'test_pressure_mpa', 'manufactured', 'kind', 'cap_number', 'other', 'confidence', 'note'],
+  required: ['readable', 'symbol', 'number', 'volume_l', 'tare_kg', 'seal_kg', 'test_pressure_mpa', 'manufactured', 'kind', 'cap_number', 'other', 'confidence', 'note', 'framing'],
   additionalProperties: false
 };
 
@@ -87,7 +91,11 @@ const KOKUIN_SYSTEM = [
   '・記号は番号が99999に達すると3文字目が1つ進む（HXP 99999 → HXQ 00001）。',
   '',
   '【confidence】high = この1枚で全桁が明瞭に確定（Wとシールが読めれば検算も合う）。medium = 一部の桁に迷いがあるが最善の読みがある。low = 検算が合わない、または確定できない。',
-  '刻印が写っていない・ぼけている・光って読めないときは readable を false にして、理由を note に短く書く。'
+  '刻印が写っていない・ぼけている・光って読めないときは readable を false にして、理由を note に短く書く。',
+  '',
+  '【写り具合 framing】カメラを自動で直すために、写真（複数枚なら一番よい1枚）の写り具合を1つ選ぶ。',
+  '・刻印の段（記号・番号・W・年月・TPの並び）の一部が写真の端で切れていれば、切れている端の向き（cut_left / cut_right / cut_top / cut_bottom。写真の上下左右で）。2方向以上なら cut_many。',
+  '・全部写っているが文字の高さが写真の短い辺の3%に満たないほど小さければ too_small。刻印が写っていなければ no_stamp。それ以外は ok。'
 ].join('\n');
 
 // 画面から呼ぶ: 1つの容器を読む。
@@ -174,7 +182,8 @@ function kokuinLog_(req, out, n) {
   const l = req.log || {};
   kokuinLogRows_('読み取りログ', [[new Date(), String(l.session || ''), String(l.how || ''), String(l.label || ''), out.tier, out.model, n,
     out.readable ? 'はい' : 'いいえ', out.symbol, "'" + out.number, out.tare_kg, out.seal_kg, out.w_check, out.kind, out.confidence,
-    Math.round(out.ms / 100) / 10, out.cost_usd, "'" + (out.manufactured || ''), "'" + (out.cap_number || ''), out.group_check, out.note]]);
+    Math.round(out.ms / 100) / 10, out.cost_usd, "'" + (out.manufactured || ''), "'" + (out.cap_number || ''), out.group_check,
+    (out.framing && out.framing !== 'ok' ? '［写り ' + out.framing + '］' : '') + out.note]]);
 }
 // 画面から呼ぶ: 一覧の結果（読み終わったとき・保存したとき）
 function logKokuinSummary(req) {
@@ -267,7 +276,8 @@ function parseKokuinResponse_(res) {
     kind: KOKUIN_KINDS.indexOf(o.kind) >= 0 ? o.kind : '不明',
     other: s(o.other),
     confidence: ['high', 'medium', 'low'].indexOf(o.confidence) >= 0 ? o.confidence : 'low',
-    note: s(o.note), w_check: '', w_from_seal: false
+    note: s(o.note), w_check: '', w_from_seal: false,
+    framing: KOKUIN_FRAMING.indexOf(o.framing) >= 0 ? o.framing : ''
   };
   // 番号は5桁すべて読めたときだけ使う（? が残る・桁が足りないものは入力に使わない）
   if (!/^\d{5,}$/.test(out.number)) out.readable = false;

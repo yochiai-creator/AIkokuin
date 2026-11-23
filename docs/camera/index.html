@@ -34,6 +34,8 @@
   #big img { max-width: 96vw; max-height: 90vh; }
   #thumbs img { cursor: pointer; }
   #zone .handle { position: absolute; right: -14px; bottom: -14px; width: 28px; height: 28px; border-radius: 50%; background: #ffd34d; border: 2px solid #000; }
+  #guide { position: absolute; left: 10px; right: 10px; top: calc(env(safe-area-inset-top) + 64px); font-size: 17px; font-weight: 800; color: #1b1b1b;
+    background: rgba(255,211,77,.95); border-radius: 10px; padding: 8px 12px; pointer-events: none; }
   #reads { position: absolute; left: 10px; right: 10px; bottom: 22px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
   #reads .rd { display: flex; align-items: center; gap: 8px; background: rgba(17,24,39,.85); border-radius: 8px; padding: 4px 8px; font-size: 16px; font-weight: 700; color: #fff; }
   #reads .rd img { height: 36px; border-radius: 4px; }
@@ -84,6 +86,7 @@
   <div id="zone"><svg id="tmpl" viewBox="130 70 740 240" preserveAspectRatio="none"></svg><span class="lbl">検知範囲</span><span class="handle" id="handle"></span></div>
   <div id="state">カメラを起動しています…</div>
   <div id="reads"></div>
+  <div id="guide" class="hidden"></div>
   <div id="meter"><div id="meterBar"></div></div>
 </div>
 <div id="bar">
@@ -223,6 +226,7 @@
     mode: store.get('mode', 'flow'),    // flow: 流れる（刻印が枠を通ったら） / stop: 止まる（止まったら）
     trigger: store.get('trigger', 'auto'),   // 流れるときに撮るきっかけ: auto＝自動（既定。緑のバルブが見えればバルブ、見えなければシール）/ valve / seal / stamp＝刻印の模様
     enhance: store.get('enhance', true),
+    autoZoom: store.get('autoZoom', true),          // 読み取りの「写り具合」でズームを自動で直す
     live: store.get('live', true),                   // 撮ったらすぐ読み取り口へ送る（既定オン。合言葉が要る）
     apiUrl: store.get('apiUrl', API_URL_DEFAULT),
     apiToken: store.get('apiToken', ''),         // 保存する写真を読みやすく加工する（白黒・凹凸の強調）
@@ -1155,15 +1159,51 @@
     const send = function(n) {
       return apiPost(body).catch(function(e) { if (n > 0) return new Promise(function(res) { setTimeout(res, 1500); }).then(function() { return send(n - 1); }); throw e; });
     };
+    let lastRead = null;
     send(1).then(function(o) {
+      lastRead = o.read || null;
       if (!o.ok) { item.state = 'ng'; item.tag = 'エラー'; item.text = o.error || '読めませんでした'; return; }
       const r = o.read || {};
       if (!r.readable) { item.state = 'ng'; item.tag = '読めない'; item.text = r.note || '刻印が読めませんでした'; return; }
       item.text = (r.symbol ? r.symbol + ' ' : '') + r.number + (r.tare_kg ? '　W' + r.tare_kg + (r.w_from_seal ? '（シール）' : '') : '　W?');
       item.state = r.sure ? 'ok' : 'warn'; item.tag = r.sure ? '確定' : '要確認';
-    }).catch(function(e) { item.state = 'ng'; item.tag = 'エラー'; item.text = '送れませんでした（' + (e && e.message || e) + '）'; })
+    }).then(function() { if (lastRead) onFraming(lastRead.framing); }).catch(function(e) { item.state = 'ng'; item.tag = 'エラー'; item.text = '送れませんでした（' + (e && e.message || e) + '）'; })
       .then(function() { camLog('読み取り', null, item.tag + '：' + item.text + '（撮ってから ' + ((Date.now() - item.sent) / 1000).toFixed(1) + '秒）'); showReads(); });
   }
+  // ---------- 写り具合で直す（現場でカメラを合わせなくてよいように） ----------
+  // 読み取り口が返す framing（刻印が端で切れている・小さい）が2本続けて同じなら、ズームを少し変え、画面の上に案内を出す。
+  // ズームを外から変えられない iPhone では案内だけ
+  const FRAME_MSG = {
+    cut_left: '刻印が左の端で切れています。カメラを少し左へ向けてください',
+    cut_right: '刻印が右の端で切れています。カメラを少し右へ向けてください',
+    cut_top: '刻印が上の端で切れています。カメラを少し上へ向けてください',
+    cut_bottom: '刻印が下の端で切れています。カメラを少し下へ向けてください',
+    cut_many: '刻印が画面に入りきっていません。少し離してください',
+    too_small: '刻印が小さく写っています。もう少し近づけてください'
+  };
+  S.frames = [];
+  function onFraming(fr) {
+    if (!fr) return;
+    S.frames.push(fr); if (S.frames.length > 3) S.frames.shift();
+    if (fr === 'ok') { $('guide').classList.add('hidden'); return; }
+    const n = S.frames.length, same = n >= 2 && S.frames[n - 1] === S.frames[n - 2];
+    if (!same || !FRAME_MSG[fr]) return;
+    let msg = FRAME_MSG[fr];
+    const canZoom = cfg.autoZoom && S.track && !$('zoomBox').classList.contains('hidden') && cfg.zoom !== null;
+    if (canZoom) {
+      const z = $('sZoom'), k = fr === 'too_small' ? 1.15 : 1 / 1.15;
+      const nz = Math.max(Number(z.min), Math.min(Number(z.max), Math.round(cfg.zoom * k * 10) / 10));
+      if (nz !== cfg.zoom) {
+        cfg.zoom = nz; store.set('zoom', nz); z.value = nz; applyTrack(); showCfg();
+        msg = (fr === 'too_small' ? 'ズームを上げました（' : 'ズームを下げました（') + nz.toFixed(1) + ' 倍）。' + (fr === 'too_small' || fr === 'cut_many' ? '' : msg);
+      }
+    }
+    S.frames = [];   // 直したら、次の2本で確かめ直す
+    $('guide').textContent = '📐 ' + msg; $('guide').classList.remove('hidden');
+    camLog('写り', null, fr + '：' + msg);
+  }
+  window.__aikcDebug.onFraming = onFraming;
+
   function showReads() {
     $('reads').innerHTML = S.reads.slice(0, 4).map(function(it) {
       return '<div class="rd ' + it.state + '"><img src="' + it.thumb + '" alt=""><span>' + it.text.replace(/[<>&]/g, '') + '</span><span class="tag">' + it.tag + '</span></div>';
