@@ -32,7 +32,8 @@ function doPost(e) {
     const log = { session: String(req.device || '').slice(0, 30), how: 'camera', label: String(req.shotAt || '') };
     const hints = lotHints_();   // 登録済みロットの記号・番号の範囲（読みの手がかり。写真に見える文字を優先させる）
     let r = readKokuin({ images: images, tier: 'fast', log: log, hints: hints }), cost = r.cost_usd || 0, how = '速読 ' + images.length + '枚';
-    if (!sureRead_(r)) {
+    // 速読で「刻印が写っていない」と分かったものは精読しない（容器のないものを撮ったときの費用と時間を省く: 精読は速読の約40倍）
+    if (!sureRead_(r) && !(r.framing === 'no_stamp' && !r.readable)) {
       const p = readKokuin({ images: images, tier: 'precise', log: log, hints: hints });
       cost += p.cost_usd || 0; how = '精読 ' + images.length + '枚';
       if (p.readable || !r.readable) r = p;
