@@ -225,6 +225,108 @@ function kokuinPrompt_(hints, frames) {
     text += '\n参考: いま検査中のロットの容器番号は次の範囲です（記号 番号の範囲）。ただし写真に見える文字を優先し、' +
       '範囲に合わせて読みを変えないでください。\n' + list.join('\n');
   }
+  const learned = learnedNotes_();
+  if (learned) text += '\n' + learned;
+  return text;
+}
+
+// ---------- 学習（人が直した読み取りから、この現場で多い読み違いを覚えて、次の読み取りで注意させる） ----------
+const LEARN_SHEET = '学習データ';
+const LEARN_HEADERS = ['日時', '結果', '読み方', 'AIの記号', 'AIの番号', 'AIのW', '正しい記号', '正しい番号', '正しいW', '違い', '入力者', '容器種別', 'ロットID'];
+// 画面から呼ぶ: 一覧から保存した容器の「AIの読み」と「人が確かめた正しい値」を記録する（直さずに保存したものは「一致」）
+function recordLearning(req) {
+  const items = (req && req.items || []).slice(0, 300);
+  if (!items.length) return { ok: true, n: 0 };
+  const sh = getSpreadsheet_().getSheetByName(LEARN_SHEET) || (function() {
+    const x = getSpreadsheet_().insertSheet(LEARN_SHEET);
+    x.getRange(1, 1, 1, LEARN_HEADERS.length).setValues([LEARN_HEADERS]); x.setFrozenRows(1); return x;
+  })();
+  const now = new Date(), str = function(v) { return v === undefined || v === null ? '' : String(v); };
+  const rows = items.map(function(it) {
+    const a = it.ai || {}, f = it.fixed || {};
+    const diff = learnDiffs_(a, f);
+    return [now, diff.length ? '直し' : '一致', str(req.how), str(a.symbol), "'" + str(a.number), str(a.w), str(f.symbol), "'" + str(f.number), str(f.w),
+      diff.join(' / '), str(req.worker), str(it.kind), str(it.lotId)];
+  });
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try { sh.getRange(sh.getLastRow() + 1, 1, rows.length, LEARN_HEADERS.length).setValues(rows); } finally { lock.releaseLock(); }
+  try { CacheService.getScriptCache().remove('learnedNotes'); } catch (e) { /* 次の10分で作り直す */ }
+  try { writeLearnSummary_(sh); } catch (e) { /* まとめが書けなくても記録は済んでいる */ }
+  return { ok: true, n: rows.length };
+}
+// 「学習のまとめ」シート: 気づきメモの形（管理担当が正式ルール（W判定ルール・共通ルール）へ写せるように、根拠の容器番号つき）
+function writeLearnSummary_(sh) {
+  const n = sh.getLastRow() - 1; if (n < 1) return;
+  const rows = sh.getRange(2, 1, n, LEARN_HEADERS.length).getValues();
+  const byKind = {};
+  rows.forEach(function(r) {
+    const k = String(r[11] || '不明');
+    const b = byKind[k] = byKind[k] || { ok: 0, ng: 0, diffs: {}, ws: {} };
+    if (r[8] !== '') b.ws[String(r[8])] = (b.ws[String(r[8])] || 0) + 1;
+    if (r[1] === '一致') { b.ok++; return; }
+    b.ng++;
+    String(r[9] || '').split(' / ').filter(String).forEach(function(d) {
+      const x = b.diffs[d] = b.diffs[d] || { n: 0, ex: [] };
+      x.n++; if (x.ex.length < 3) x.ex.push(String(r[4]).replace(/^'/, '') + '→' + String(r[7]).replace(/^'/, ''));
+    });
+  });
+  const day = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  const lines = ['# AIkokuin の気づきメモ（自動作成 ' + day + '。学習データ ' + n + ' 本から）', '# 正式ルールへの反映は管理担当が判断する。根拠は「AIの読み→人が直した値」の容器番号', ''];
+  Object.keys(byKind).forEach(function(k) {
+    const b = byKind[k], tot = b.ok + b.ng;
+    lines.push('【' + k + '】 人が確かめた ' + tot + ' 本のうち、AIの読みのまま正しかった ' + b.ok + ' 本（' + Math.round(b.ok * 100 / tot) + '%）、直した ' + b.ng + ' 本');
+    Object.keys(b.diffs).sort(function(x, y) { return b.diffs[y].n - b.diffs[x].n; }).slice(0, 10).forEach(function(d) {
+      lines.push('・' + d + '  ' + b.diffs[d].n + '回（例: ' + b.diffs[d].ex.join('、') + '）');
+    });
+    const ws = Object.keys(b.ws).sort().map(function(w) { return 'W' + w + '=' + b.ws[w] + '本'; });
+    if (ws.length) lines.push('・Wの内訳（人が確かめた値）: ' + ws.join(' / '));
+    lines.push('');
+  });
+  const ss = getSpreadsheet_();
+  const out = ss.getSheetByName('学習のまとめ') || ss.insertSheet('学習のまとめ');
+  out.clearContents();
+  out.getRange(1, 1, lines.length, 1).setValues(lines.map(function(l) { return [l]; }));
+}
+// AIの読みと正しい値の違い（桁ごと）。例 ['番号「5」→「6」', 'W 16.8→16.6']
+function learnDiffs_(a, f) {
+  const out = [], str = function(v) { return v === undefined || v === null ? '' : String(v); };
+  const chars = function(label, x, y) {
+    x = str(x); y = str(y);
+    if (!x || !y || x === y) return;
+    if (x.length !== y.length) { out.push(label + 'の桁数 ' + x + '→' + y); return; }
+    for (let i = 0; i < x.length; i++) if (x[i] !== y[i] && x[i] !== '?') out.push(label + '「' + x[i] + '」→「' + y[i] + '」');
+  };
+  chars('記号', a.symbol, f.symbol);
+  chars('番号', a.number, f.number);
+  if (str(a.w) && str(f.w) && Number(a.w) !== Number(f.w)) out.push('W ' + a.w + '→' + f.w);
+  return out;
+}
+// 学習データから「この現場で多い読み違い」を作る（新しい300件から、多い順に8つ）。10分は覚えておく
+function learnedNotes_() {
+  const cache = CacheService.getScriptCache();
+  try { const c = cache.get('learnedNotes'); if (c !== null) return c; } catch (e) { /* 作り直す */ }
+  let text = '';
+  try {
+    const sh = getSpreadsheet_().getSheetByName(LEARN_SHEET);
+    if (sh && sh.getLastRow() >= 2) {
+      const n = Math.min(300, sh.getLastRow() - 1);
+      const rows = sh.getRange(sh.getLastRow() - n + 1, 1, n, LEARN_HEADERS.length).getValues();
+      const count = {}; let ok = 0, ng = 0;
+      rows.forEach(function(r) {
+        if (r[1] === '一致') { ok++; return; }
+        ng++;
+        String(r[9] || '').split(' / ').filter(String).forEach(function(d) { count[d] = (count[d] || 0) + 1; });
+      });
+      const top = Object.keys(count).sort(function(x, y) { return count[y] - count[x]; }).slice(0, 8);
+      if (top.length) {
+        text = 'この現場で最近あった読み違い（人が直したもの。AIの読み→正しい字。同じ字形が出たら特に注意して見分けること。ただし写真に見える文字を優先する）:\n' +
+          top.map(function(k) { return '・' + k + '（' + count[k] + '回）'; }).join('\n') +
+          '\n（最近 ' + (ok + ng) + ' 本のうち、人が直したのは ' + ng + ' 本）';
+      }
+    }
+  } catch (e) { text = ''; }
+  try { cache.put('learnedNotes', text, 600); } catch (e) { /* 覚えられなくても読める */ }
   return text;
 }
 

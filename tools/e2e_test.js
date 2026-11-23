@@ -1434,6 +1434,31 @@ function check(name, ok, detail) {
     check('カメラの読み取り: 保存すると成績表に入り、その行は「入力済み」になる（要確認の行は残る）', c.getLot(L.lotId).entries['52041'] === 16.7 && c.getLot(L.lotId).entries['52042'] === undefined &&
       JSON.stringify(cst) === JSON.stringify(['入力済み', '未入力', '入力済み', '未入力']), JSON.stringify(cst));
 
+    // 学習: 一覧で「✏️ 直す」→ 保存すると学習データに「直し」、そのまま保存は「一致」。次の読み取りの指示に「この現場で多い読み違い」が入る
+    cs.getRange(9, 1, 2, 24).setValues([camRow('d1', '未入力', '52065', 16.7, true), camRow('d2', '未入力', '52067', 16.7, true)]);
+    await pv.click('#btnVidClose'); await pv.waitForTimeout(200);
+    await pv.click('#btnCamReads');
+    for (let i = 0; i < 40 && !(await pv.isVisible('#btnVidSave')); i++) await pv.waitForTimeout(250);
+    const answers = ['HRH 52066', '16.8'];
+    pv.on('dialog', d => d.accept(answers.shift()));
+    const fixIdx = await pv.$$eval('.vid-row', els => els.findIndex(e => e.textContent.includes('52065')));
+    await pv.click('.vid-row:nth-child(' + (fixIdx + 1) + ') button.fix'); await pv.waitForTimeout(300);
+    const fixed = await pv.$$eval('.vid-row', els => els.map(e => e.textContent));
+    check('学習: 「✏️ 直す」で正しい番号・Wに直せる（人が直した印）', fixed.some(t => t.includes('52066') && t.includes('W16.8') && t.includes('人が直した')), JSON.stringify(fixed));
+    await pv.click('#btnVidAll'); await pv.waitForTimeout(100);
+    await pv.click('#btnVidSave'); await pv.waitForTimeout(1500);
+    const ls = m.ss.getSheetByName('学習データ'), lv = ls.getRange(2, 1, ls.getLastRow() - 1, 13).getValues();
+    const fixRow = lv.find(r => String(r[7]).includes('52066')), okRow = lv.find(r => String(r[7]).includes('52067'));
+    check('学習: 直した読みは「直し」と桁ごとの違い、そのままは「一致」で学習データに残る', fixRow && fixRow[1] === '直し' && /番号「5」→「6」/.test(fixRow[9]) && /W 16\.7→16\.8/.test(fixRow[9]) &&
+      okRow && okRow[1] === '一致', JSON.stringify(lv));
+    const sumv = m.ss.getSheetByName('学習のまとめ').getRange(1, 1, 8, 1).getValues().map(r => r[0]).join('\n');
+    check('学習: 「学習のまとめ」に気づきメモの形（種別ごとの正解率・多い読み違いと根拠の番号）', /気づきメモ/.test(sumv) && /【20kg】 人が確かめた \d+ 本のうち、AIの読みのまま正しかった \d+ 本（\d+%）、直した 1 本/.test(sumv) && /番号「5」→「6」  1回（例: 52065→52066）/.test(sumv), sumv);
+    c.CacheService.getScriptCache().remove('learnedNotes');
+    global.CLAUDE_REQS = []; global.CLAUDE_REPLIES = [reply({ number: '52071' })];
+    c.readKokuin({ images: ['AAAA'], tier: 'fast' });
+    const ptxt = JSON.stringify(global.CLAUDE_REQS[0].body.messages);
+    check('学習: 次の読み取りの指示に「この現場で最近あった読み違い」が入る', ptxt.includes('この現場で最近あった読み違い') && ptxt.includes('番号「5」→「6」'), ptxt.slice(-400));
+
     // 全自動: 入力画面を開いているあいだ、確定・ロットの範囲内・Wが標準どおりの読み取りはそのまま成績表に入れ、それ以外は「要確認」と理由
     cs.getRange(6, 1, 3, 24).setValues([camRow('b1', '未入力', '52051', 16.7, true), camRow('b2', '未入力', '52052', 16.7, false), camRow('b3', '未入力', '99999', 16.7, true)]);
     const pa = await browser.newPage({ viewport: { width: 820, height: 1180 } });

@@ -3,7 +3,7 @@ const path=require('path'); const GAS=path.join(__dirname,'..','gas');
 function colNum(l){let n=0;for(const c of l)n=n*26+c.charCodeAt(0)-64;return n;}
 function a1(s){const m=s.match(/^([A-Z]+)(\d+)(?::([A-Z]+)(\d+))?$/);const r=+m[2],c=colNum(m[1]);const r2=m[4]?+m[4]:r,c2=m[3]?colNum(m[3]):c;return [r,c,r2-r+1,c2-c+1];}
 let sid=1;
-class Sheet{constructor(ss,name){this.ss=ss;this.name=name;this.cells={};this.fonts={};this.rich={};this.id=sid++;}
+class Sheet{constructor(ss,name){this.ss=ss;this.name=name;this.cells={};this.fonts={};this.rich={};this.id=sid++;} clearContents(){this.cells={};return this}
  getName(){return this.name} setName(n){this.name=n;return this} getSheetId(){return this.id}
  get(r,c){const v=this.cells[r+','+c];return v===undefined?'':v} set(r,c,v){this.cells[r+','+c]=v}
  getLastColumn(){let m=0;for(const k in this.cells){const c=+k.split(',')[1];if(this.cells[k]!==''&&c>m)m=c}return m}

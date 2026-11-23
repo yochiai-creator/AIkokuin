@@ -313,6 +313,7 @@
   .vid-row .w { font-size: 20px; font-weight: 700; margin-left: 8px; }
   .vid-row .meta { font-size: 13px; color: var(--muted); line-height: 1.6; }
   .vid-row .st { font-size: 14px; font-weight: 700; }
+  .vid-row .fix { margin-top: 6px; border: 1px solid var(--navy); background: #fff; color: var(--navy); border-radius: 8px; padding: 6px 12px; font-size: 14px; }
   .vid-row .st.ok { color: var(--ok); } .vid-row .st.warn { color: var(--warn); } .vid-row .st.err { color: var(--ng); }
 </style>
 </head>
@@ -324,7 +325,7 @@
 <div class="sp-sub">読み込み中…</div></div>
 <script>window.SPLASH_T0 = Date.now();</script>
 <header>
-  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v18（写り具合でカメラを自動で直す）</span></h1>
+  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v19（学習: 直した読み違いを次に活かす）</span></h1>
   <span class="user" id="workerBadge"></span>
   <span class="user" id="user"></span>
   <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
@@ -2647,7 +2648,8 @@
         '<img src="' + it.thumb + '" alt="">' +
         '<div><div><span class="num">' + esc(name) + '</span>' + (r.tare_kg ? '<span class="w">W' + esc(r.tare_kg) + (r.w_from_seal ? '（シールから）' : '') + '</span>' : '') + '</div>' +
         '<div class="meta">' + esc(kokuinText(r)) + '　' + how + (it.camId ? '' : V.how === 'video' ? '　' + it.t.toFixed(1) + '秒' : V.picks.length > 1 ? '　' + it.t + '枚目' : '') + (r.note ? '<br>' + esc(r.note) : '') + '</div>' +
-        '<div class="st ' + st[1] + '">' + esc(st[0]) + '</div></div></div>';
+        '<div class="st ' + st[1] + '">' + esc(st[0]) + (it.r0 ? '（人が直した）' : '') + '</div>' +
+        (it.saved ? '' : '<button class="fix" data-fix="' + i + '">✏️ 直す</button>') + '</div></div>';
     }).join('');
     const n = V.items.filter(function(it) { return it.checked && !it.saved; }).length;
     const sure = V.items.filter(function(it) { return it.sure && !it.m.warn && !it.m.err && !it.dup; }).length;
@@ -2661,7 +2663,26 @@
     vidButtons({ btnVidSave: true, btnVidAll: V.items.some(function(it) { return it.canSave && !it.saved && !it.checked; }) });
   }
 
+  // 学習: AIの読みが違っていたら、正しい番号・Wに直す（保存したときに「学習データ」に残り、次の読み取りで同じ読み違いに注意させる）
+  function fixItem(it) {
+    const r = it.r;
+    const num = window.prompt('正しい容器番号（記号も。例 HXR 15514）', ((r.symbol ? r.symbol + ' ' : '') + r.number).trim());
+    if (num === null) return;
+    const m = String(num).toUpperCase().replace(/[０-９Ａ-Ｚ]/g, function(c) { return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); }).match(/^\s*([A-Z]{0,4})\s*(\d{5,})\s*$/);
+    if (!m) { window.alert('「記号 番号5桁」で入れてください（例 HXR 15514）'); return; }
+    const w = window.prompt('正しいW（刻印の質量。例 16.6）', r.tare_kg || '');
+    if (w === null) return;
+    if (!/^\d{1,3}(\.\d)?$/.test(String(w).trim())) { window.alert('Wは数字で入れてください（例 16.6）'); return; }
+    if (!it.r0) it.r0 = Object.assign({}, r);
+    it.r = Object.assign({}, r, { symbol: m[1] || r.symbol, number: m[2], tare_kg: Number(w).toFixed(1), w_from_seal: false, readable: true, confidence: 'high',
+      w_check: r.seal_kg && Math.abs(Number(w) + 0.5 - Number(r.seal_kg)) < 0.05 ? 'OK' : '', note: (r.note ? r.note + ' / ' : '') + '人が直した' });
+    it.key = it.r.number; it.fastOk = true;
+    judgeOne(it, false);
+    vidRender();
+  }
   $('vidList').addEventListener('click', function(ev) {
+    const fx = ev.target.closest('button.fix');
+    if (fx) { fixItem(V.items[Number(fx.getAttribute('data-fix'))]); return; }
     const img = ev.target.closest('img');
     if (img) { img.classList.toggle('big'); return; }
     const cb = ev.target.closest('input[type=checkbox]');
@@ -2722,10 +2743,16 @@
   function vidSave() {
     if (S.stage !== 'num') resetEntry('容器番号を入力', 'info');
     let saved = 0, skipped = 0; const camDone = [];
+    const learn = [];
     V.items.forEach(function(it) {
       if (!it.checked || it.saved || !it.canSave) return;
-      if (saveOne(it, V.how)) { saved++; if (it.camId) camDone.push(it.camId); } else skipped++;
+      if (saveOne(it, V.how)) {
+        saved++; if (it.camId) camDone.push(it.camId);
+        const a = it.r0 || it.r;
+        learn.push({ ai: { symbol: a.symbol, number: a.number, w: a.tare_kg }, fixed: { symbol: it.r.symbol, number: it.r.number, w: it.r.tare_kg }, kind: it.m.hit.lot.kind, lotId: it.m.hit.lot.lotId });
+      } else skipped++;
     });
+    if (learn.length) call('recordLearning', { items: learn, how: V.how, worker: worker() }).catch(function() { /* 残せなくても入力は済んでいる */ });
     if (camDone.length) call('markCameraReads', { ids: camDone, worker: worker() }).catch(function() { /* 印をつけられなくても入力は済んでいる */ });
     if (saved) beep(true);
     vidRender();
