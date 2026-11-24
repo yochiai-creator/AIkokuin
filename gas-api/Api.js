@@ -93,7 +93,7 @@ function lotHints_() {
       const n = Math.min(40, sh.getLastRow() - 1);
       out = sh.getRange(sh.getLastRow() - n + 1, 3, n, 4).getDisplayValues()
         .filter(function(r) { return r[0] && r[1]; })
-        .map(function(r) { return { prefix: r[0], start: r[1], end: r[2], kind: r[3] }; });
+        .map(function(r) { const p5 = function(x) { x = String(x); while (x.length < 5) x = '0' + x; return x; }; return { prefix: r[0], start: p5(r[1]), end: p5(r[2]), kind: r[3] }; });
     }
     cache.put('lotHints', JSON.stringify(out), 60);
   } catch (e) { /* 手がかりなしで読む */ }

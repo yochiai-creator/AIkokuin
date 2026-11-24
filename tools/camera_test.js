@@ -245,10 +245,10 @@ function check(name, ok, detail) {
   await valvePass(tgt.y * 720);
   check('バルブ: 次の容器のバルブでも撮る（2本・4枚）', (await vshots()) === 4 && await vp.evaluate(() => window.__aikc.passes) === 2, await vshots());
   await valvePass(Math.min(700, tgt.y * 720 + 330));
-  check('バルブ: 型の中心から遠い所を通ったバルブでは撮らない', (await vshots()) === 4, await vshots());
+  check('バルブ: 流れと直角の向きにずれた所を通っても、流れる向きで真ん中に来たら撮る（横から撮る画角）', (await vshots()) === 6, await vshots());
   await vp.evaluate(() => { window.__vblur = true; });
   await valvePass(tgt.y * 720);
-  check('バルブ: ひどくぶれたバルブは撮らず、「ぶれて撮れなかった」と知らせる', (await vshots()) === 4 && (await vp.textContent('#state')).includes('ぶれて'), (await vshots()) + ' ' + await vp.textContent('#state'));
+  check('バルブ: ひどくぶれたバルブは撮らず、「ぶれて撮れなかった」と知らせる', (await vshots()) === 6 && (await vp.textContent('#state')).includes('ぶれて'), (await vshots()) + ' ' + await vp.textContent('#state'));
   await vp.close();
 
   // ---- 総重量シールで撮る（横から撮る画角）: 白地に黒い印刷のかたまりが枠の真ん中を通ったら撮る。動かない黒い印では撮らない

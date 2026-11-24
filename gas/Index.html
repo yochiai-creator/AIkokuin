@@ -325,7 +325,7 @@
 <div class="sp-sub">読み込み中…</div></div>
 <script>window.SPLASH_T0 = Date.now();</script>
 <header>
-  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v19（学習: 直した読み違いを次に活かす）</span></h1>
+  <h1>AI刻印 質量入力 <span style="font-size:12px;font-weight:400;opacity:.7">AIkokuin v20（現場の試しから: 横からの画角・ロット番号の0）</span></h1>
   <span class="user" id="workerBadge"></span>
   <span class="user" id="user"></span>
   <button id="btnHome" class="hidden" tabindex="-1">ロット一覧へ</button>
@@ -2243,7 +2243,10 @@
     let t = 0; for (let i = 0; i < a.length; i++) t += Math.abs(a[i] - b[i]);
     return t / a.length;
   }
-  function camHints() { return S.lots.map(function(l) { return { prefix: l.prefix, start: l.start, end: l.end, kind: l.kind }; }); }
+  function camHints() {
+    const p5 = function(x) { x = String(x); while (x.length < 5) x = '0' + x; return x; };   // 先頭の0が落ちた番号（9301）も5桁で渡す
+    return S.lots.map(function(l) { return { prefix: l.prefix, start: p5(l.start), end: p5(l.end), kind: l.kind }; });
+  }
 
   function kokuinText(r) {
     const parts = [];

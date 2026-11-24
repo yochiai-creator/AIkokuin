@@ -242,7 +242,7 @@
   function cropRect() {
     if (cfg.cropMode === 'full') return { x: 0, y: 0, w: 1, h: 1 };
     if (sealMode()) return { x: 0, y: 0, w: 1, h: 1 };   // シールのときは画面全体を保存（刻印の段がどこにあっても切れない）
-    if (valveMode()) { const v = $('video'); return v.videoWidth && S.lastValve ? valveCrop(v, S.lastValve) : { x: 0, y: 0, w: 1, h: 1 }; }
+    if (valveMode()) return { x: 0, y: 0, w: 1, h: 1 };   // 画面全体を保存（横から撮ると刻印はバルブの下で、バルブ中心の正方形からはみ出した: 2026-11-24）
     return cfg.crop || autoCrop(rotBox(cfg.zone));
   }
   // 自動: 容器を待っているあいだに緑のバルブが見えたらバルブで、見えなければシールで撮る（通過の途中では切り替えない）
@@ -864,12 +864,16 @@
       return;
     }
     S.noValve = 0;
-    place($('crop'), valveCrop(v, f));
-    // 画面の真ん中からの距離（ハンドルの直径を1として）
-    const dist = pxDist(v, f, CENTER) / Math.max(4, f.D);
-    $('meterBar').style.width = Math.max(0, Math.min(100, (1 - dist / 2) * 100)) + '%';
-    if (!S.pass) S.pass = { start: now, cands: [], gone: 0, best: 99 };
+    if (!S.pass) S.pass = { start: now, cands: [], gone: 0, best: 99, minX: f.x, maxX: f.x, minY: f.y, maxY: f.y };
     const p = S.pass; p.gone = 0; p.last = f;
+    p.minX = Math.min(p.minX, f.x); p.maxX = Math.max(p.maxX, f.x); p.minY = Math.min(p.minY, f.y); p.maxY = Math.max(p.maxY, f.y);
+    // 流れる向き（左右か上下か）に沿った、画面の真ん中までの距離（ハンドルの直径を1として）。流れと直角のずれは問わない
+    // （横から撮ると、バルブは画面の上の方を通り、刻印はその下に来る: 2026-11-24 の現場では真ん中から遠いとして撮れなかった）
+    // 流れる向きは、バルブがハンドル1.5個ぶん以上動いてから決める（それまでは画面の真ん中からのふつうの距離。入って来たばかりの揺れで向きを取り違えない）
+    const mvX = (p.maxX - p.minX) * v.videoWidth, mvY = (p.maxY - p.minY) * v.videoHeight, D = Math.max(4, f.D);
+    const alongX = mvX >= mvY;
+    const dist = Math.max(mvX, mvY) < 1.5 * D ? pxDist(v, f, CENTER) / D : Math.abs(alongX ? (f.x - 0.5) * v.videoWidth : (f.y - 0.5) * v.videoHeight) / D;
+    $('meterBar').style.width = Math.max(0, Math.min(100, (1 - dist / 2) * 100)) + '%';
     if (dist < p.best) { p.best = dist; p.bestT = now; }
     $('vt').classList.toggle('armed', dist < 0.5);
     setState('バルブが通過中…（真ん中まで ハンドル ' + dist.toFixed(1) + ' 個ぶん）');
@@ -879,7 +883,7 @@
     const sh = dist < 2 ? valveSharp(v, f) : 0;
     if (dist < 2 && sh < VALVE_MIN_SHARP) p.blurred = true;
     if (sh > (p.sh || 0)) p.sh = sh;
-    if (dist < 2 && sh >= VALVE_MIN_SHARP) keepCand(p, Math.pow(sh, 3) / (1 + dist), now, v, cfg.cropMode === 'full' ? null : valveCrop(v, f));
+    if (dist < 2 && sh >= VALVE_MIN_SHARP) keepCand(p, Math.pow(sh, 3) / (1 + dist), now, v, null);
     // 真ん中を通り過ぎて離れ始めたら、バルブが画面から消えるのを待たずに保存する
     // （1本あたりの枚数ぶん集まるように、一番近づいてから少し（0.3秒）待つ）
     if (p.best < 1.5 && dist > p.best + 1 && now - p.bestT > 300 && p.cands.length && (p.cands.length >= cfg.burst || dist >= 2)) { finishValve(p, f); return; }
@@ -1186,9 +1190,11 @@
     if (!fr) return;
     S.frames.push(fr); if (S.frames.length > 3) S.frames.shift();
     if (fr === 'ok') { $('guide').classList.add('hidden'); return; }
-    const n = S.frames.length, same = n >= 2 && S.frames[n - 1] === S.frames[n - 2];
+    // 端で切れた判定は、向きが違っても2本続けば「近すぎる」（左右交互に切れていた: 2026-11-24）
+    const n = S.frames.length, isCut = function(x) { return /^cut_/.test(x); };
+    const same = n >= 2 && (S.frames[n - 1] === S.frames[n - 2] || (isCut(S.frames[n - 1]) && isCut(S.frames[n - 2])));
     if (!same || !FRAME_MSG[fr]) return;
-    let msg = FRAME_MSG[fr];
+    let msg = n >= 2 && isCut(fr) && S.frames[n - 1] !== S.frames[n - 2] ? FRAME_MSG.cut_many : FRAME_MSG[fr];
     const canZoom = cfg.autoZoom && S.track && !$('zoomBox').classList.contains('hidden') && cfg.zoom !== null;
     if (canZoom) {
       const z = $('sZoom'), k = fr === 'too_small' ? 1.15 : 1 / 1.15;
