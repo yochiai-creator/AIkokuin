@@ -122,6 +122,9 @@
   <select id="sKind" style="width:100%;font-size:16px;padding:6px"></select>
   <label>撮り方</label>
   <div class="row" style="color:#1b2240;font-size:15px">
+    <label style="margin:0;font-weight:400"><input type="radio" name="mode" value="watch"> 見て読む（おすすめ。容器が通るあいだ、刻印がよく見えたコマを4枚選んで見比べて読む）</label>
+  </div>
+  <div class="row" style="color:#1b2240;font-size:15px">
     <label style="margin:0;font-weight:400"><input type="radio" name="mode" value="flow"> 流れる（刻印が枠を通ったら撮る）</label>
   </div>
   <div class="row" style="color:#1b2240;font-size:15px">
@@ -230,7 +233,7 @@
     zone: store.get('zone', { x: 0.25, y: 0.34, w: 0.5, h: 0.29 }),  // 映像に対する割合（刻印の型の縦横 740:240 に合わせた大きさ）
     kind: store.get('kind', '50kg'),    // 刻印の型（KINDS）
     autoFit: store.get('autoFit', false),  // 自動補正（撮るたびに型を実物に合わせる）。現場の写真で反射や1段ずれに寄ることがあったので既定はオフ
-    mode: store.get('mode', 'flow'),    // flow: 流れる（刻印が枠を通ったら） / stop: 止まる（止まったら）
+    mode: store.get('mode', 'watch'),    // flow: 流れる（刻印が枠を通ったら） / stop: 止まる（止まったら）
     trigger: store.get('trigger', 'auto'),   // 流れるときに撮るきっかけ: auto＝自動（既定。緑のバルブが見えればバルブ、見えなければシール）/ valve / seal / stamp＝刻印の模様
     enhance: store.get('enhance', true),
     autoZoom: store.get('autoZoom', true),          // 読み取りの「写り具合」でズームを自動で直す
@@ -255,8 +258,14 @@
     return cfg.crop || autoCrop(rotBox(cfg.zone));
   }
   // 自動: 容器を待っているあいだに緑のバルブが見えたらバルブで、見えなければシールで撮る（通過の途中では切り替えない）
-  function valveMode() { return cfg.mode === 'flow' && (cfg.trigger === 'valve' || (cfg.trigger === 'auto' && S.autoMode === 'valve')); }
-  function sealMode() { return cfg.mode === 'flow' && (cfg.trigger === 'seal' || (cfg.trigger === 'auto' && S.autoMode !== 'valve')); }
+  // 見て読む（watch）: 流れるときと同じように容器を見張り、通過のあいだ刻印がよく見えたコマを角度を変えて何枚も選ぶ（人が目で追って読むように）
+  function isWatch() { return cfg.mode === 'watch'; }
+  function isFlow() { return cfg.mode === 'flow' || cfg.mode === 'watch'; }
+  function trig() { return isWatch() ? 'auto' : cfg.trigger; }
+  function burstN() { return isWatch() ? WATCH_FRAMES : cfg.burst; }
+  const WATCH_FRAMES = 4, WATCH_GAP_MS = 350;   // 1本あたり4枚（AIに一度に送れる上限）。0.35秒以上離れたコマ（容器の角度が変わる）
+  function valveMode() { return isFlow() && (trig() === 'valve' || (trig() === 'auto' && S.autoMode === 'valve')); }
+  function sealMode() { return isFlow() && (trig() === 'seal' || (trig() === 'auto' && S.autoMode !== 'valve')); }
   function noZone() { return valveMode() || sealMode(); }   // 枠を合わせなくてよい撮り方
   // 緑のバルブで撮るときの保存する範囲: バルブを中心に、刻印の一番外の段まで入る正方形。
   // 容器がどの向きで来ても刻印がまるごと入る（現場の写真で、刻印が反対側に来て外の段が切れていた: 2026-11-21）
@@ -299,7 +308,7 @@
         const p = v.play(); if (p && p.catch) p.catch(function() {});
         v.addEventListener('loadedmetadata', layoutZone);
         $('btnRun').disabled = false;
-        setState(cfg.mode !== 'flow' ? '検知範囲を台の上に合わせ、台を空にして「開始」' : cfg.trigger === 'auto' ? '容器が画面の真ん中（緑の丸）を通るように向けて、容器がないときに「開始」。刻印がまるごと入る距離で' : cfg.trigger === 'valve' ? '緑のバルブが画面の真ん中（緑の丸）を通るように向けて「開始」。容器がまるごと入る距離で' : cfg.trigger === 'seal' ? 'シールと刻印が画面の真ん中（緑の丸）を通るように向けて、容器がないときに「開始」。刻印の段がまるごと入る距離で' : '枠を刻印が通る所に合わせ、刻印がないときに「開始」');
+        setState(isWatch() ? '容器が画面を通るように向けて、容器がないときに「開始」。刻印がよく見えたコマを何枚も選んで読みます' : cfg.mode !== 'flow' ? '検知範囲を台の上に合わせ、台を空にして「開始」' : cfg.trigger === 'auto' ? '容器が画面の真ん中（緑の丸）を通るように向けて、容器がないときに「開始」。刻印がまるごと入る距離で' : cfg.trigger === 'valve' ? '緑のバルブが画面の真ん中（緑の丸）を通るように向けて「開始」。容器がまるごと入る距離で' : cfg.trigger === 'seal' ? 'シールと刻印が画面の真ん中（緑の丸）を通るように向けて、容器がないときに「開始」。刻印の段がまるごと入る距離で' : '枠を刻印が通る所に合わせ、刻印がないときに「開始」');
         setInterval(tick, TICK_MS);
         flowLoop();
       })
@@ -348,7 +357,7 @@
     place($('crop'), cropRect());
     // 緑のバルブで撮るときは、バルブが来るべき所（型の弧の中心）に印を出す
     const v = $('video'), showVt = noZone() && v.videoWidth;
-    $('vt').setAttribute('data-label', cfg.trigger === 'auto' ? '容器がここを通ったら撮る' : sealMode() ? 'シールと刻印がここを通ったら撮る' : 'バルブがここを通ったら撮る');
+    $('vt').setAttribute('data-label', trig() === 'auto' ? '容器がここを通ったら撮る' : sealMode() ? 'シールと刻印がここを通ったら撮る' : 'バルブがここを通ったら撮る');
     $('vt').classList.toggle('hidden', !showVt);
     if (showVt) { const b = videoBox(); $('vt').style.left = (b.left + 0.5 * b.w) + 'px'; $('vt').style.top = (b.top + 0.5 * b.h) + 'px'; }
   }
@@ -396,7 +405,7 @@
 
   // ---------- 見張り ----------
   function tick() {
-    if (cfg.mode === 'flow' || cfg.mode === 'interval') return;
+    if (isFlow() || cfg.mode === 'interval') return;
     const sig = zoneSig(); if (!sig) return;
     const motion = diff(sig, S.prev); S.prev = sig;
     $('meterBar').style.width = Math.min(100, motion / (moveTh() * 2) * 100) + '%';
@@ -889,13 +898,14 @@
     // 真ん中に近いほど良い。ハンドル2個ぶんより遠いコマは撮らない
     // 真ん中に近く、くっきりしているコマほど良い（手持ちだと2枚のうち1枚がぶれていた: 2026-11-21）
     // ひどくぶれたコマは撮らない（くっきり具合: 現場のよい写真は12以上、ぶれて読めない写真は4.5）
-    const sh = dist < 2 ? valveSharp(v, f) : 0;
-    if (dist < 2 && sh < VALVE_MIN_SHARP) p.blurred = true;
+    const win = isWatch() ? 3 : 2;   // 見て読むときは、真ん中の前後もっと広く（容器の角度が変わるコマも）見る
+    const sh = dist < win ? valveSharp(v, f) : 0;
+    if (dist < win && sh < VALVE_MIN_SHARP) p.blurred = true;
     if (sh > (p.sh || 0)) p.sh = sh;
-    if (dist < 2 && sh >= VALVE_MIN_SHARP) keepCand(p, Math.pow(sh, 3) / (1 + dist), now, v, null);
+    if (dist < win && sh >= VALVE_MIN_SHARP) keepCand(p, Math.pow(sh, 3) / (1 + (isWatch() ? 0.3 : 1) * dist), now, v, null);
     // 真ん中を通り過ぎて離れ始めたら、バルブが画面から消えるのを待たずに保存する
     // （1本あたりの枚数ぶん集まるように、一番近づいてから少し（0.3秒）待つ）
-    if (p.best < 1.5 && dist > p.best + 1 && now - p.bestT > 300 && p.cands.length && (p.cands.length >= cfg.burst || dist >= 2)) { finishValve(p, f); return; }
+    if (p.best < 1.5 && dist > p.best + 1 && now - p.bestT > 300 && p.cands.length && (isWatch() ? dist >= win : (p.cands.length >= cfg.burst || dist >= 2))) { finishValve(p, f); return; }
     if (now - p.start > VALVE_PASS_MS) { if (p.best < 1.5 && p.cands.length) finishValve(p, f); else { S.pass = null; blurWarn(p); camLog('撮らず', p, skipWhy(p, 1.5) + '（20秒たった）'); } }
   }
   function finishValve(p, f) {
@@ -975,7 +985,7 @@
     if (!S.pass && !S.sealHold) S.hist.push({ t: now, v: f.n });
     $('meterBar').style.width = Math.max(0, Math.min(100, (f.n - base) / Math.max(1, hi - base) * 60)) + '%';
     if (!S.pass) {
-      if (S.sealHold || f.n <= hi) { if (!S.sealHold && !(S.warnUntil > now)) setState('見張り中: ' + (cfg.trigger === 'auto' ? '容器' : 'シール') + 'が画面の真ん中に来たら撮ります（' + S.passes + ' 本・' + S.shots.length + ' 枚）', 'ok'); return; }
+      if (S.sealHold || f.n <= hi) { if (!S.sealHold && !(S.warnUntil > now)) setState('見張り中: ' + (trig() === 'auto' ? '容器' : 'シール') + 'が画面の真ん中に来たら撮ります（' + S.passes + ' 本・' + S.shots.length + ' 枚）', 'ok'); return; }
       // 流れる向きが分かったら、容器が入って来る側（真ん中より手前）に現れたかたまりだけで数え始める
       // （出ていく容器の端に写ったシールやバルブ袋のひもで撮り直さない）
       const sd = S.sealDir;
@@ -994,7 +1004,8 @@
     if (dist < p.best) { p.best = dist; p.bestT = now; }
     $('vt').classList.toggle('armed', dist < 0.15);
     setState('容器が通過中…（シールが画面の真ん中まで ' + Math.round(dist * 100) + '%）');
-    if (f.n > lo && dist < 0.5) keepCand(p, f.sharp * f.sharp / (0.1 + dist), now, v);
+    const swin = isWatch() ? 0.8 : 0.5;
+    if (f.n > lo && dist < swin) keepCand(p, f.sharp * f.sharp / ((isWatch() ? 0.4 : 0.1) + dist), now, v);
     if (f.n > lo && f.sharp > (p.sh || 0)) p.sh = f.sharp;
     // 動いて来たかたまりだけ（画面の25%以上動いた）。床の印のように動かない黒では撮らない
     const moved = p.maxX - p.minX >= 0.25 || p.maxY - p.minY >= 0.25;
@@ -1004,7 +1015,7 @@
       camLog('撮影', p, (alongX ? '左右' : '上下') + 'に流れる・印刷のかたまり ' + f.n);
       S.pass = null; S.sealHold = 1; S.sealAxisX = alongX; $('vt').classList.remove('armed'); saveCands(p.cands); };
     // 真ん中を過ぎて離れ始めたら保存（1本あたりの枚数ぶん集まるよう少し待つ）
-    if (moved && p.best < 0.2 && dist > p.best + 0.3 && now - p.bestT > 300 && p.cands.length && (p.cands.length >= cfg.burst || dist >= 0.5)) return done();
+    if (moved && p.best < 0.2 && dist > p.best + 0.3 && now - p.bestT > 300 && p.cands.length && (isWatch() ? dist >= swin : (p.cands.length >= cfg.burst || dist >= 0.5))) return done();
     if (p.below >= 3 || now - p.start > VALVE_PASS_MS) {
       if (moved && p.best < 0.3 && p.cands.length) return done();
       camLog('撮らず', p, !moved ? '動いていない（床の印など）' : skipWhy(p, 0.3));
@@ -1013,9 +1024,9 @@
   }
 
   function flowFrame() {
-    if (!S.running || cfg.mode !== 'flow') return;
+    if (!S.running || !isFlow()) return;
     const v = $('video'), now = Date.now();
-    if (cfg.trigger === 'auto') {
+    if (trig() === 'auto') {
       if (now < S.learnUntil) return;
       // 一度バルブが見えたら、30秒バルブが見えなくなるまではバルブで撮る（容器と容器のあいだや、出ていく容器でシールに切り替えて余計に撮らない）
       if (!S.pass) {
@@ -1057,10 +1068,10 @@
   }
   // 1本あたりの枚数ぶん、くっきりしたコマを覚える（NEAR_MS 以内のコマは高い方だけ）
   function keepCand(p, e, now, v, rect) {
-    const near = p.cands.filter(function(c) { return now - c.t < NEAR_MS; })[0];
+    const near = p.cands.filter(function(c) { return now - c.t < (isWatch() ? WATCH_GAP_MS : NEAR_MS); })[0];
     let slot = null;
     if (near) { if (e <= near.e) return; slot = near; }
-    else if (p.cands.length < cfg.burst) { slot = { c: document.createElement('canvas') }; p.cands.push(slot); }
+    else if (p.cands.length < burstN()) { slot = { c: document.createElement('canvas') }; p.cands.push(slot); }
     else { const low = p.cands.reduce(function(a, b) { return a.e <= b.e ? a : b; }); if (e <= low.e) return; slot = low; }
     slot.e = e; slot.t = now; slot.at = new Date(now);
     const r = drawOut(v, slot.c, rect);
@@ -1350,7 +1361,7 @@
   }
   $('big').onclick = function() { this.classList.add('hidden'); $('bigImg').src = ''; };
   function updateCount() {
-    $('count').textContent = (cfg.mode === 'flow' ? S.passes + ' 本・' : '') + S.shots.length + ' 枚';
+    $('count').textContent = (isFlow() ? S.passes + ' 本・' : '') + S.shots.length + ' 枚';
     $('btnSave').disabled = !S.shots.length;
     $('btnSave').innerHTML = '📤 <span class="wide">写真に</span>保存（' + S.shots.length + '）';
   }
@@ -1373,7 +1384,7 @@
       S.hist = []; S.pass = null; S.learnUntil = Date.now() + 1000;
       S.iv = { last: 0, group: null, busy: 0 };
       this.textContent = '■ 停止'; this.classList.add('stop');
-      setState(cfg.mode === 'flow' ? '枠の中のふだんの様子を覚えています…' : '空の台を覚えています…（範囲の中を空にしてください）', 'warn');
+      setState(isFlow() ? '枠の中のふだんの様子を覚えています…' : '空の台を覚えています…（範囲の中を空にしてください）', 'warn');
       beep();   // iPadでは、ボタンを押したときに一度鳴らしておかないと音が出ない
       if (navigator.wakeLock) navigator.wakeLock.request('screen').then(function(w) { S.wake = w; }, function() {});
     } else {
@@ -1470,7 +1481,7 @@
   window.addEventListener('beforeunload', function(e) { if (S.shots.length) { e.preventDefault(); e.returnValue = ''; } });
 
   // ---------- 設定 ----------
-  function runLabel() { return cfg.mode === 'interval' ? '▶ 開始（' + cfg.intervalSec + '秒ごとに撮る）' : cfg.mode === 'flow' ? '▶ 開始（枠に刻印がないときに押す）' : '▶ 開始（台を空にして押す）'; }
+  function runLabel() { return isWatch() ? '▶ 開始（見て読む）' : cfg.mode === 'interval' ? '▶ 開始（' + cfg.intervalSec + '秒ごとに撮る）' : cfg.mode === 'flow' ? '▶ 開始（枠に刻印がないときに押す）' : '▶ 開始（台を空にして押す）'; }
   function showCfg() {
     Array.prototype.forEach.call(document.querySelectorAll('input[name=mode]'), function(r) { r.checked = r.value === cfg.mode; });
     Array.prototype.forEach.call(document.querySelectorAll('input[name=cropMode]'), function(r) { r.checked = r.value === cfg.cropMode; });

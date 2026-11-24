@@ -101,7 +101,7 @@ function check(name, ok, detail) {
   const fp = await browser.newPage({ viewport: { width: 1180, height: 820 } });
   fp.on('pageerror', e => check('ページでJSエラーなし(流れる)', false, e.message));
   await fp.addInitScript(() => {
-    try { localStorage.setItem('aikc.trigger', '"stamp"'); } catch (e) { /* 既定のまま */ }
+    try { localStorage.setItem('aikc.trigger', '"stamp"'); localStorage.setItem('aikc.mode', '"flow"'); } catch (e) { /* 既定のまま */ }
     const cv = document.createElement('canvas'); cv.width = 640; cv.height = 360;
     window.__x = null;   // 刻印の左端（null なら刻印なし＝なめらかな塗装だけ）
     const paint = () => {
@@ -148,7 +148,7 @@ function check(name, ok, detail) {
   const ap = await browser.newPage({ viewport: { width: 1180, height: 820 } });
   ap.on('pageerror', e => check('ページでJSエラーなし(自動補正)', false, e.message));
   await ap.addInitScript(() => {
-    try { localStorage.setItem('aikc.trigger', '"stamp"'); } catch (e) { /* 既定のまま */ }
+    try { localStorage.setItem('aikc.trigger', '"stamp"'); localStorage.setItem('aikc.mode', '"flow"'); } catch (e) { /* 既定のまま */ }
     const cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720;
     window.__truth = { dx: 30, dy: 40, s: 1.12, rot: 8 * Math.PI / 180 };
     window.__stamp = true;
@@ -208,7 +208,7 @@ function check(name, ok, detail) {
   vp.on('pageerror', e => check('ページでJSエラーなし(バルブ)', false, e.message));
   await vp.addInitScript(() => {
     // 20kg の型を画面の下寄りに置く（バルブが来るべき所＝型の弧の中心が画面の中に来るように）
-    try { localStorage.setItem('aikc.kind', '"20kg"'); localStorage.setItem('aikc.zone', JSON.stringify({ x: 0.35, y: 0.605, w: 0.3, h: 0.179 })); } catch (e) { /* 既定のまま */ }
+    try { localStorage.setItem('aikc.mode', '"flow"'); localStorage.setItem('aikc.kind', '"20kg"'); localStorage.setItem('aikc.zone', JSON.stringify({ x: 0.35, y: 0.605, w: 0.3, h: 0.179 })); } catch (e) { /* 既定のまま */ }
     const cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720;
     window.__vx = null; window.__vy = 0;
     const paint = () => {
@@ -370,6 +370,35 @@ function check(name, ok, detail) {
   const ivr = await ip.$$eval('#reads .rd', els => els.map(e => e.textContent));
   check('間隔: まとめた1本の結果を画面に出す', ivr.some(t => t.includes('16510') && t.includes('確定')), JSON.stringify(ivr));
   await ip.close();
+
+  // ---- 見て読む（既定）: 容器が通るあいだ、0.35秒以上離れたよく見えるコマを4枚選んで1本として送る
+  const wp = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+  wp.on('pageerror', e => check('ページでJSエラーなし(見て読む)', false, e.message));
+  await wp.addInitScript(() => {
+    const cv = document.createElement('canvas'); cv.width = 1280; cv.height = 720;
+    window.__vx = null; window.__vy = 360;
+    const paint = () => {
+      const g = cv.getContext('2d');
+      g.fillStyle = '#d8d8d8'; g.fillRect(0, 0, 1280, 720);
+      if (window.__vx !== null) {
+        g.fillStyle = '#2e9e3e'; g.beginPath(); g.arc(window.__vx, window.__vy, 45, 0, 7); g.fill();
+        g.strokeStyle = '#155a20'; g.lineWidth = 2;
+        for (let k = -36; k <= 36; k += 6) { g.beginPath(); g.moveTo(window.__vx - 30, window.__vy + k * 0.8); g.lineTo(window.__vx + 30, window.__vy + k * 0.8); g.stroke(); }
+      }
+    };
+    paint(); setInterval(paint, 33);
+    Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: () => Promise.resolve(cv.captureStream(30)) } });
+  });
+  await wp.goto('file://' + path.join(__dirname, '..', 'docs', 'camera', 'index.html'));
+  await wp.waitForTimeout(800);
+  check('見て読む: 撮り方の既定は「見て読む」', await wp.evaluate(() => document.querySelector('input[name=mode][value=watch]').checked) && (await wp.textContent('#btnRun')).includes('見て読む'));
+  await wp.click('#btnRun'); await wp.waitForTimeout(1300);
+  for (let x = 1350; x >= -70; x -= 12) { await wp.evaluate(a => { window.__vx = a; }, x); await wp.waitForTimeout(33); }
+  await wp.evaluate(() => { window.__vx = null; }); await wp.waitForTimeout(800);
+  const ws = await wp.evaluate(() => window.__aikc.shots.map(f => f.lastModified));
+  const gaps = ws.slice(1).map((t, i) => t - ws[i]);
+  check('見て読む: 1本の通過で、0.35秒以上離れたコマを3〜4枚選ぶ（1本として数える）', ws.length >= 3 && ws.length <= 4 && gaps.every(g => g >= 300) && await wp.evaluate(() => window.__aikc.passes) === 1, JSON.stringify(gaps) + ' ' + ws.length);
+  await wp.close();
 
   await browser.close();
   const failed = results.filter(r => !r).length;
