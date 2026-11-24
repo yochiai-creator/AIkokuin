@@ -319,7 +319,7 @@ function check(name, ok, detail) {
   const reads = await sp.$$eval('#reads .rd', els => els.map(e => e.textContent));
   const sent = apiReqs.filter(b => b.images);
   check('その場で読む: 1本ごとに写真2枚を合言葉つきで送り、番号・Wと「確定／要確認」を画面の下に出す',
-    sent.length === 2 && sent.every(b => b.token === 'aikotoba' && b.images.length === 2 && b.thumb) && reads.length === 2 &&
+    sent.length === 2 && sent.every(b => b.token === 'aikotoba' && b.images.length === 2 && b.thumb && b.originals.length === 2 && b.originals[0].length > 100) && reads.length === 2 &&
     reads[0].includes('HXR 15378') && reads[0].includes('W16.5') && reads[0].includes('確定') && reads[1].includes('要確認'), JSON.stringify(reads) + ' ' + sent.length);
   check('写り具合: 「文字が小さい」が2本続いたら、ズームを自動で少し上げて案内を出す', (await sp.textContent('#guide')).includes('ズームを上げました（1.2 倍') &&
     await sp.evaluate(() => window.__zoomSet === 1.2 && !document.getElementById('guide').classList.contains('hidden')), (await sp.textContent('#guide')) + ' ' + await sp.evaluate(() => window.__zoomSet));

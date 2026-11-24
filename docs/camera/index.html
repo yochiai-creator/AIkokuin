@@ -227,7 +227,8 @@
     trigger: store.get('trigger', 'auto'),   // 流れるときに撮るきっかけ: auto＝自動（既定。緑のバルブが見えればバルブ、見えなければシール）/ valve / seal / stamp＝刻印の模様
     enhance: store.get('enhance', true),
     autoZoom: store.get('autoZoom', true),          // 読み取りの「写り具合」でズームを自動で直す
-    live: store.get('live', true),                   // 撮ったらすぐ読み取り口へ送る（既定オン。合言葉が要る）
+    live: store.get('live', true),
+    keepOrig: store.get('keepOrig', true),          // 加工前の写真もドライブに残す（精度の作り込み用）                   // 撮ったらすぐ読み取り口へ送る（既定オン。合言葉が要る）
     apiUrl: store.get('apiUrl', API_URL_DEFAULT),
     apiToken: store.get('apiToken', ''),         // 保存する写真を読みやすく加工する（白黒・凹凸の強調）
     cropMode: store.get('cropMode', 'around'),   // around: 刻印のまわりだけ保存 / full: 画面全体
@@ -1158,7 +1159,8 @@
     S.reads.unshift(item); S.reads.length = Math.min(S.reads.length, 30); showReads();
     const body = {
       id: item.id, shotAt: cs[0].at.toISOString(), device: devId, thumb: item.thumb,
-      images: cs.slice(0, 4).map(function(c) { return jpegOf(c.c, 1568, 0.88).split(',')[1]; })
+      images: cs.slice(0, 4).map(function(c) { return jpegOf(c.c, 1568, 0.88).split(',')[1]; }),
+      originals: cs.slice(0, 4).map(function(c) { return c.c.__orig || ''; })
     };
     const send = function(n) {
       return apiPost(body).catch(function(e) { if (n > 0) return new Promise(function(res) { setTimeout(res, 1500); }).then(function() { return send(n - 1); }); throw e; });
@@ -1286,6 +1288,8 @@
 
   function saveCanvas(c, at) {
     if (S.rot90) rotateCanvas(c, S.rot90);
+    // 精度の作り込み用に、加工前の写真も読み取り口へ送ってドライブに残す（AIには送らない）
+    if (cfg.live && cfg.keepOrig) { try { c.__orig = jpegOf(c, 1568, 0.85).split(',')[1]; } catch (e) { c.__orig = ''; } }
     if (cfg.enhance) { try { enhanceCanvas(c); } catch (e) { /* 加工できなくてもそのまま保存 */ } }
     if (S.shots.length >= MAX_SHOTS) { setState('ためた写真が ' + MAX_SHOTS + ' 枚になりました。「📤 写真に保存」してください', 'ng'); return Promise.resolve(); }
     return new Promise(function(res) { c.toBlob(res, 'image/jpeg', 0.92); }).then(function(blob) {

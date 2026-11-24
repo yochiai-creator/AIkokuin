@@ -12,7 +12,9 @@ const SPREADSHEET_ID_DEFAULT = '1qaNb6J_ZvD9IWsmdJYYYUnxDGDsGV442Uu59TpqRX8w';  
 const CAMERA_SHEET = 'カメラ読み取り';
 const CAMERA_HEADERS = ['受付日時', 'ID', '状態', '記号', '番号', '質量W(kg)', '内容積V(L)', '耐圧試験圧力TP(MPa)', '製造年月',
   '総重量シール(kg)', 'W検算', '容器種別（読取）', '確からしさ', '確定', '読み方', 'モデル', '備考', '端末', '撮影日時', '費用(USD)', '秒',
-  'キャップのグループNo', 'グループNo照合', '小さな写真'];
+  'キャップのグループNo', 'グループNo照合', '小さな写真', '写真（ドライブ）', '正解の記号', '正解の番号', '正解のW', '判定', '写り', '向き', '指示の版'];
+// 精度を作り込むため、AIに送った写真（加工後）と加工前の写真をドライブに残す。読み取りの正解は「正解の…」の列に後から書く
+const PHOTO_ROOT = 'AI刻印 読み取り写真';
 
 function doGet() {
   return json_({ ok: true, service: 'AI刻印 読み取り口' });
@@ -29,7 +31,8 @@ function doPost(e) {
     const images = (req.images || []).slice(0, 4);
     if (!images.length) throw new Error('写真がありません');
     // まず速読（安いモデルで、同じ容器の写真をまとめて）。決めきれなければ精読（高精度のモデル）
-    const log = { session: String(req.device || '').slice(0, 30), how: 'camera', label: String(req.shotAt || '') };
+    const id = String(req.id || Utilities.getUuid());
+    const log = { session: String(req.device || '').slice(0, 30), how: 'camera', label: id };
     const hints = lotHints_();   // 登録済みロットの記号・番号の範囲（読みの手がかり。写真に見える文字を優先させる）
     let r = readKokuin({ images: images, tier: 'fast', log: log, hints: hints }), cost = r.cost_usd || 0, how = '速読 ' + images.length + '枚';
     // 速読で「刻印が写っていない」と分かったものは精読しない（容器のないものを撮ったときの費用と時間を省く: 精読は速読の約40倍）
@@ -40,8 +43,9 @@ function doPost(e) {
     }
     r.sure = sureRead_(r);
     r.how = how; r.cost_usd = cost; r.ms = Date.now() - started;
-    const id = String(req.id || Utilities.getUuid());
-    appendCamera_(id, r, req);
+    let photos = '';
+    try { photos = savePhotos_(id, images, req.originals || []); } catch (e) { photos = '保存できません: ' + e.message; }
+    appendCamera_(id, r, req, photos);
     return json_({ ok: true, id: id, read: r });
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message || err) });
@@ -61,13 +65,32 @@ function tokenOk_(token) {
   return h(token) === h(want);
 }
 
-function appendCamera_(id, r, req) {
+// 写真をドライブの「AI刻印 読み取り写真/日付/」に ID_1.jpg（AIに送った写真）・ID_1_orig.jpg（加工前）として残す。日付のフォルダのURLを返す
+function savePhotos_(id, images, originals) {
+  const props = PropertiesService.getScriptProperties();
+  let root = null;
+  const rid = props.getProperty('PHOTO_ROOT_ID');
+  if (rid) { try { root = DriveApp.getFolderById(rid); } catch (e) { root = null; } }
+  if (!root) { root = DriveApp.createFolder(PHOTO_ROOT); props.setProperty('PHOTO_ROOT_ID', root.getId()); }
+  const day = Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy-MM-dd');
+  const it = root.getFoldersByName(day), folder = it.hasNext() ? it.next() : root.createFolder(day);
+  const put = function(b64, name) {
+    folder.createFile(Utilities.newBlob(Utilities.base64Decode(String(b64).replace(/^data:image\/\w+;base64,/, '')), 'image/jpeg', name));
+  };
+  images.forEach(function(b, i) { put(b, id + '_' + (i + 1) + '.jpg'); });
+  originals.slice(0, 4).forEach(function(b, i) { if (b) put(b, id + '_' + (i + 1) + '_orig.jpg'); });
+  return folder.getUrl();
+}
+
+function appendCamera_(id, r, req, photos) {
   const ss = getSpreadsheet_();
   let sh = ss.getSheetByName(CAMERA_SHEET);
   if (!sh) {
     sh = ss.insertSheet(CAMERA_SHEET);
     sh.getRange(1, 1, 1, CAMERA_HEADERS.length).setValues([CAMERA_HEADERS]);
     sh.setFrozenRows(1);
+  } else if (sh.getRange(1, CAMERA_HEADERS.length).getValue() === '') {
+    sh.getRange(1, 1, 1, CAMERA_HEADERS.length).setValues([CAMERA_HEADERS]);   // 列が増えたときの見出し
   }
   const thumb = String(req.thumb || '');
   const lock = LockService.getScriptLock();
@@ -76,7 +99,8 @@ function appendCamera_(id, r, req) {
     sh.appendRow([new Date(), id, '未入力', r.symbol || '', "'" + (r.number || ''), r.tare_kg || '', r.volume_l || '', r.test_pressure_mpa || '',
       "'" + (r.manufactured || ''), r.seal_kg || '', r.w_check || '', r.kind || '', r.confidence || '', r.sure ? '確定' : '要確認', r.how || '',
       r.model || '', r.note || '', String(req.device || ''), String(req.shotAt || ''), r.cost_usd || 0, Math.round((r.ms || 0) / 100) / 10,
-      "'" + (r.cap_number || ''), r.group_check || '', thumb.length < 45000 ? thumb : '']);
+      "'" + (r.cap_number || ''), r.group_check || '', thumb.length < 45000 ? thumb : '', photos || '', '', '', '', '', r.framing || '', r.upright || '',
+      KOKUIN_PROMPT_VERSION]);
   } finally {
     lock.releaseLock();
   }

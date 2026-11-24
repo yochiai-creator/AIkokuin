@@ -6,6 +6,8 @@
 // モデルはスクリプトプロパティ KOKUIN_MODEL_FAST（速読）・KOKUIN_MODEL（精読）で変えられる。
 
 const KOKUIN_SHEET = '刻印記録';
+// 指示（KOKUIN_SYSTEM・スキーマ・学習の足し方）を変えたら上げる。読み取りログに残し、変える前と後の正答率を比べる
+const KOKUIN_PROMPT_VERSION = 'p21';
 const KOKUIN_HEADERS = ['記録日時', 'ロットID', '容器番号', '読取 記号', '読取 番号', '内容積V(L)', '質量W(kg)',
   '耐圧試験圧力TP(MPa)', '製造年月', 'その他の刻印', '確からしさ', '入力のしかた', '入力者', '端末', 'Googleアカウント', 'モデル', '備考',
   '総重量シール(kg)', 'W検算', '容器種別（読取）', '刻印の年月（そのまま）', 'キャップのグループNo', 'グループNo照合'];
@@ -151,7 +153,7 @@ function readKokuin(req) {
 // スクリプトプロパティ KOKUIN_LOG=off で止められる
 const KOKUIN_LOG_SHEETS = {
   '読み取りログ': ['日時', 'セッション', '読み方', 'コマ', '段階', 'モデル', '枚数', '読めた', '記号', '番号', 'W', 'シール', 'W検算',
-    '種別', '確からしさ', '秒', '費用(USD)', '年月', 'キャップ', 'グループNo照合', '備考'],
+    '種別', '確からしさ', '秒', '費用(USD)', '年月', 'キャップ', 'グループNo照合', '備考', '指示の版', '写り', '向き'],
   '読み取りまとめ': ['日時', 'セッション', '読み方', 'できごと', '記号', '番号', 'W', '状態', '読み方の詳細', 'チェック', '保存', 'コマ/時刻', '確からしさ', '備考'],
   'カメラログ': ['日時', '端末', '撮影時刻', 'できごと', '撮るきっかけ', '容器の種類', '本目', '枚数', '真ん中までの距離', 'くっきり', '詳細']
 };
@@ -166,6 +168,9 @@ function kokuinLogSheet_(name) {
     const h = KOKUIN_LOG_SHEETS[name];
     sh.getRange(1, 1, 1, h.length).setValues([h]);
     sh.setFrozenRows(1);
+  } else {
+    const h = KOKUIN_LOG_SHEETS[name];
+    if (sh.getRange(1, h.length).getValue() === '') sh.getRange(1, 1, 1, h.length).setValues([h]);   // 列が増えたときの見出し
   }
   return sh;
 }
@@ -185,7 +190,7 @@ function kokuinLog_(req, out, n) {
   kokuinLogRows_('読み取りログ', [[new Date(), String(l.session || ''), String(l.how || ''), String(l.label || ''), out.tier, out.model, n,
     out.readable ? 'はい' : 'いいえ', out.symbol, "'" + out.number, out.tare_kg, out.seal_kg, out.w_check, out.kind, out.confidence,
     Math.round(out.ms / 100) / 10, out.cost_usd, "'" + (out.manufactured || ''), "'" + (out.cap_number || ''), out.group_check,
-    (out.framing && out.framing !== 'ok' ? '［写り ' + out.framing + '］' : '') + out.note]]);
+    out.note, KOKUIN_PROMPT_VERSION, out.framing, out.upright]]);
 }
 // 画面から呼ぶ: 一覧の結果（読み終わったとき・保存したとき）
 function logKokuinSummary(req) {
