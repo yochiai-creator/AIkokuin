@@ -279,7 +279,7 @@ function check(name, ok, detail) {
   await sp.route('https://script.google.com/**', route => {
     const b = JSON.parse(route.request().postData() || '{}'); apiReqs.push(b);
     route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' },
-      body: JSON.stringify(b.ping ? { ok: b.token === 'aikotoba' } : { ok: true, id: b.id, read: { readable: true, symbol: 'HXR', number: '15378', tare_kg: '16.5', sure: apiReqs.length >= 2, framing: 'too_small' } }) });
+      body: JSON.stringify(b.ping ? { ok: b.token === 'aikotoba' } : { ok: true, id: b.id, read: { readable: true, symbol: 'HXR', number: '15378', tare_kg: '16.5', sure: apiReqs.length >= 2, framing: 'too_small', upright: '90' } }) });
   });
   await sp.addInitScript(() => {
     localStorage.setItem('aikc.live', 'true'); localStorage.setItem('aikc.apiToken', '"aikotoba"');
@@ -323,6 +323,11 @@ function check(name, ok, detail) {
     reads[0].includes('HXR 15378') && reads[0].includes('W16.5') && reads[0].includes('確定') && reads[1].includes('要確認'), JSON.stringify(reads) + ' ' + sent.length);
   check('写り具合: 「文字が小さい」が2本続いたら、ズームを自動で少し上げて案内を出す', (await sp.textContent('#guide')).includes('ズームを上げました（1.2 倍') &&
     await sp.evaluate(() => window.__zoomSet === 1.2 && !document.getElementById('guide').classList.contains('hidden')), (await sp.textContent('#guide')) + ' ' + await sp.evaluate(() => window.__zoomSet));
+  const rot = await sp.evaluate(async () => {
+    const c = document.createElement('canvas'); c.width = 40; c.height = 20; await window.__aikc && 0;
+    return [window.__aikcDebug.reads().length, localStorage.getItem('aikc.rot90')];
+  });
+  check('写真の向き: 「時計回りに90°」が2本続いたら、以後は90°回して保存する', rot[1] === '90', JSON.stringify(rot));
   const evs = apiReqs.filter(b => b.events).reduce((a, b) => a.concat(b.events), []).concat(await sp.evaluate(() => window.__aikcDebug.logQ()));
   check('テストのログ: 1本ごとの「撮影」と「読み取り」（かかった秒数つき）をカメラログに残す', evs.filter(e => e.type === '撮影').length === 2 &&
     evs.filter(e => e.type === '読み取り').length === 2 && evs.some(e => /撮ってから [0-9.]+秒/.test(e.detail)) && evs.every(e => e.trigger === 'seal'), JSON.stringify(evs.map(e => e.type + ':' + e.detail)));

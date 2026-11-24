@@ -45,9 +45,10 @@ const KOKUIN_SCHEMA = {
     other: { type: 'string', description: 'そのほかに読めた刻印（LPガス・菱形マーク・※など以外の記号）を空白区切りで' },
     confidence: { type: 'string', enum: ['high', 'medium', 'low'], description: '容器番号とWの読みの確からしさ' },
     note: { type: 'string', description: '迷った桁・反射・重ね打ちなど（短く。なければ空文字）' },
+    upright: { type: 'string', enum: ['0', '90', '180', '270'], description: '写真全体を正しい向き（床や台が下、容器が立って見える）にするには時計回りに何度回すか。正しい向きなら 0' },
     framing: { type: 'string', enum: KOKUIN_FRAMING, description: '写り具合（カメラの向き・ズームを自動で直すのに使う）。刻印の段が画面の端で切れていればその向き' }
   },
-  required: ['readable', 'symbol', 'number', 'volume_l', 'tare_kg', 'seal_kg', 'test_pressure_mpa', 'manufactured', 'kind', 'cap_number', 'other', 'confidence', 'note', 'framing'],
+  required: ['readable', 'symbol', 'number', 'volume_l', 'tare_kg', 'seal_kg', 'test_pressure_mpa', 'manufactured', 'kind', 'cap_number', 'other', 'confidence', 'note', 'framing', 'upright'],
   additionalProperties: false
 };
 
@@ -95,7 +96,8 @@ const KOKUIN_SYSTEM = [
   '',
   '【写り具合 framing】カメラを自動で直すために、写真（複数枚なら一番よい1枚）の写り具合を1つ選ぶ。',
   '・刻印の段（記号・番号・W・年月・TPの並び）の一部が写真の端で切れていれば、切れている端の向き（cut_left / cut_right / cut_top / cut_bottom。写真の上下左右で）。2方向以上なら cut_many。',
-  '・全部写っているが文字の高さが写真の短い辺の3%に満たないほど小さければ too_small。刻印が写っていなければ no_stamp。それ以外は ok。'
+  '・全部写っているが文字の高さが写真の短い辺の3%に満たないほど小さければ too_small。刻印が写っていなければ no_stamp。それ以外は ok。',
+  '【写真の向き upright】写真全体（刻印の文字ではなく、床・台・容器・背景）が正しい向き（床が下、容器が立って見える）になるには時計回りに何度回せばよいか（0/90/180/270）。真上から見下ろしていて決められなければ 0。'
 ].join('\n');
 
 // 画面から呼ぶ: 1つの容器を読む。
@@ -379,7 +381,8 @@ function parseKokuinResponse_(res) {
     other: s(o.other),
     confidence: ['high', 'medium', 'low'].indexOf(o.confidence) >= 0 ? o.confidence : 'low',
     note: s(o.note), w_check: '', w_from_seal: false,
-    framing: KOKUIN_FRAMING.indexOf(o.framing) >= 0 ? o.framing : ''
+    framing: KOKUIN_FRAMING.indexOf(o.framing) >= 0 ? o.framing : '',
+    upright: ['0', '90', '180', '270'].indexOf(String(o.upright)) >= 0 ? String(o.upright) : ''
   };
   // 番号は5桁すべて読めたときだけ使う（? が残る・桁が足りないものは入力に使わない）
   if (!/^\d{5,}$/.test(out.number)) out.readable = false;

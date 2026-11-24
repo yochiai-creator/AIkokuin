@@ -1171,7 +1171,7 @@
       if (!r.readable) { item.state = 'ng'; item.tag = '読めない'; item.text = r.note || '刻印が読めませんでした'; return; }
       item.text = (r.symbol ? r.symbol + ' ' : '') + r.number + (r.tare_kg ? '　W' + r.tare_kg + (r.w_from_seal ? '（シール）' : '') : '　W?');
       item.state = r.sure ? 'ok' : 'warn'; item.tag = r.sure ? '確定' : '要確認';
-    }).then(function() { if (lastRead) onFraming(lastRead.framing); }).catch(function(e) { item.state = 'ng'; item.tag = 'エラー'; item.text = '送れませんでした（' + (e && e.message || e) + '）'; })
+    }).then(function() { if (lastRead) { onFraming(lastRead.framing); onUpright(lastRead.upright); } }).catch(function(e) { item.state = 'ng'; item.tag = 'エラー'; item.text = '送れませんでした（' + (e && e.message || e) + '）'; })
       .then(function() { camLog('読み取り', null, item.tag + '：' + item.text + '（撮ってから ' + ((Date.now() - item.sent) / 1000).toFixed(1) + '秒）'); showReads(); });
   }
   // ---------- 写り具合で直す（現場でカメラを合わせなくてよいように） ----------
@@ -1209,6 +1209,27 @@
     camLog('写り', null, fr + '：' + msg);
   }
   window.__aikcDebug.onFraming = onFraming;
+  // 写真の向き: AIが「時計回りに何度回せば正しい向きか」を返す。同じ答え（0以外）が2本続いたら、以後の写真をその分回して保存する
+  // （iPhone を横に持って画面の向きが固定されていると、写真が横倒しになる: 2026-11-24）。答えは回したあとの写真に対するもの
+  S.rot90 = store.get('rot90', 0); S.ups = [];
+  function onUpright(u) {
+    if (u === undefined || u === null || u === '') return;
+    S.ups.push(u); if (S.ups.length > 2) S.ups.shift();
+    if (u === '0' || S.ups.length < 2 || S.ups[0] !== S.ups[1]) return;
+    S.rot90 = (S.rot90 + Number(u)) % 360; store.set('rot90', S.rot90); S.ups = [];
+    const g = $('guide'), m = '🔄 写真が横倒しだったので、これから ' + S.rot90 + '° 回して保存します';
+    g.textContent = g.classList.contains('hidden') ? m : g.textContent + '　' + m; g.classList.remove('hidden');
+    camLog('向き', null, '時計回りに ' + S.rot90 + '° 回して保存');
+  }
+  window.__aikcDebug.onUpright = onUpright;
+  // キャンバスをその場で時計回りに deg 度回す
+  function rotateCanvas(c, deg) {
+    if (!deg) return;
+    const t = document.createElement('canvas'); t.width = c.width; t.height = c.height; t.getContext('2d').drawImage(c, 0, 0);
+    if (deg % 180) { c.width = t.height; c.height = t.width; }
+    const g = c.getContext('2d');
+    g.save(); g.translate(c.width / 2, c.height / 2); g.rotate(deg * Math.PI / 180); g.drawImage(t, -t.width / 2, -t.height / 2); g.restore();
+  }
 
   function showReads() {
     $('reads').innerHTML = S.reads.slice(0, 4).map(function(it) {
@@ -1264,6 +1285,7 @@
   window.__aikcDebug.enhanceCanvas = enhanceCanvas;
 
   function saveCanvas(c, at) {
+    if (S.rot90) rotateCanvas(c, S.rot90);
     if (cfg.enhance) { try { enhanceCanvas(c); } catch (e) { /* 加工できなくてもそのまま保存 */ } }
     if (S.shots.length >= MAX_SHOTS) { setState('ためた写真が ' + MAX_SHOTS + ' 枚になりました。「📤 写真に保存」してください', 'ng'); return Promise.resolve(); }
     return new Promise(function(res) { c.toBlob(res, 'image/jpeg', 0.92); }).then(function(blob) {
