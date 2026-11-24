@@ -36,9 +36,17 @@ function doPost(e) {
     // 登録済みロットの範囲は既定では渡さない（ロットと違う容器を流したとき、範囲に引っぱられて先頭の桁を0と読みかけた: 2026-11-24）。
     // スクリプトプロパティ USE_LOT_HINTS=on で渡す
     const hints = PropertiesService.getScriptProperties().getProperty('USE_LOT_HINTS') === 'on' ? lotHints_() : [];
-    let r = readKokuin({ images: images, tier: 'fast', log: log, hints: hints }), cost = r.cost_usd || 0, how = '速読 ' + images.length + '枚';
+    // 一定の間隔で撮るとき: 1枚ずつの速読だけ（記録しない。カメラが同じ番号の写真を1本にまとめる）
+    if (req.tier === 'fast') {
+      const f = readKokuin({ images: images.slice(0, 1), tier: 'fast', log: log, hints: hints });
+      return json_({ ok: true, read: f });
+    }
+    // 1本にまとめた写真の速読の読みが揃っていれば、それで確定（追加の読み取りなし）
+    const agreed = agreeFast_(req.fastReads);
+    let r = agreed || readKokuin({ images: images, tier: 'fast', log: log, hints: hints }), cost = agreed ? 0 : r.cost_usd || 0;
+    let how = agreed ? '速読 ' + req.fastReads.length + '枚一致' : '速読 ' + images.length + '枚';
     // 速読で「刻印が写っていない」と分かったものは精読しない（容器のないものを撮ったときの費用と時間を省く: 精読は速読の約40倍）
-    if (!sureRead_(r) && !(r.framing === 'no_stamp' && !r.readable)) {
+    if (!agreed && !sureRead_(r) && !(r.framing === 'no_stamp' && !r.readable)) {
       const p = readKokuin({ images: images, tier: 'precise', log: log, hints: hints });
       cost += p.cost_usd || 0; how = '精読 ' + images.length + '枚';
       if (p.readable || !r.readable) r = p;
@@ -52,6 +60,20 @@ function doPost(e) {
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message || err) });
   }
+}
+
+// 一定の間隔で撮った同じ容器の速読の読み（2枚以上）が揃っているか。揃っていれば確定の読みを返す
+// 揃う: 番号が全部読めて同じ・Wが同じ・W検算がどれかでOKでNGなし・確からしさに low がない
+function agreeFast_(reads) {
+  reads = (Array.isArray(reads) ? reads : []).filter(function(r) { return r && r.readable; });
+  if (reads.length < 2) return null;
+  const nums = reads.map(function(r) { return String(r.number); }), ws = reads.map(function(r) { return String(r.tare_kg || ''); });
+  if (!/^\d{5}$/.test(nums[0]) || nums.some(function(n) { return n !== nums[0]; })) return null;
+  if (!ws[0] || ws.some(function(w) { return w !== ws[0]; })) return null;
+  if (!reads.some(function(r) { return r.w_check === 'OK'; }) || reads.some(function(r) { return r.w_check === 'NG'; })) return null;
+  if (reads.some(function(r) { return r.confidence === 'low'; })) return null;
+  const best = reads.filter(function(r) { return r.symbol; })[0] || reads[0];
+  return Object.assign({}, best, { confidence: 'high', note: (best.note ? best.note + ' / ' : '') + reads.length + '枚の速読が一致' });
 }
 
 // 人が確かめなくてよい読み: 番号が全部読め、確からしさが高く、Wがあってシールとの検算が合わない（NG）ことがない

@@ -127,6 +127,13 @@
   <div class="row" style="color:#1b2240;font-size:15px">
     <label style="margin:0;font-weight:400"><input type="radio" name="mode" value="stop"> 止まる（枠の中で止まったら撮る）</label>
   </div>
+  <div class="row" style="color:#1b2240;font-size:15px">
+    <label style="margin:0;font-weight:400"><input type="radio" name="mode" value="interval"> 一定の間隔で撮る（容器ごとに自動でまとめて判定）</label>
+  </div>
+  <div id="ivBox">
+  <label>撮る間隔 <span class="v" id="vIv"></span></label>
+  <input type="range" id="sIv" min="1" max="10" step="0.5">
+  </div>
   <label>1本あたりの枚数 <span class="v" id="vBurst"></span></label>
   <input type="range" id="sBurst" min="1" max="4" step="1">
   <div id="stillBox">
@@ -228,6 +235,7 @@
     enhance: store.get('enhance', true),
     autoZoom: store.get('autoZoom', true),          // 読み取りの「写り具合」でズームを自動で直す
     live: store.get('live', true),
+    intervalSec: store.get('intervalSec', 3),        // 一定の間隔で撮るときの間隔（秒）
     keepOrig: store.get('keepOrig', true),          // 加工前の写真もドライブに残す（精度の作り込み用）                   // 撮ったらすぐ読み取り口へ送る（既定オン。合言葉が要る）
     apiUrl: store.get('apiUrl', API_URL_DEFAULT),
     apiToken: store.get('apiToken', ''),         // 保存する写真を読みやすく加工する（白黒・凹凸の強調）
@@ -388,7 +396,7 @@
 
   // ---------- 見張り ----------
   function tick() {
-    if (cfg.mode === 'flow') return;
+    if (cfg.mode === 'flow' || cfg.mode === 'interval') return;
     const sig = zoneSig(); if (!sig) return;
     const motion = diff(sig, S.prev); S.prev = sig;
     $('meterBar').style.width = Math.min(100, motion / (moveTh() * 2) * 100) + '%';
@@ -1152,7 +1160,7 @@
     return o.toDataURL('image/jpeg', q);
   }
   S.reads = [];
-  function liveRead(cands) {
+  function liveRead(cands, extra) {
     const cs = cands.slice().sort(function(a, b) { return a.t - b.t; });
     const item = { id: 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), thumb: jpegOf(cs[0].c, 240, 0.7), state: 'wait', text: '読み取り中…', tag: '読取中' };
     item.sent = Date.now();
@@ -1162,6 +1170,7 @@
       images: cs.slice(0, 4).map(function(c) { return jpegOf(c.c, 1568, 0.88).split(',')[1]; }),
       originals: cs.slice(0, 4).map(function(c) { return c.c.__orig || ''; })
     };
+    if (extra && extra.fastReads) body.fastReads = extra.fastReads;
     const send = function(n) {
       return apiPost(body).catch(function(e) { if (n > 0) return new Promise(function(res) { setTimeout(res, 1500); }).then(function() { return send(n - 1); }); throw e; });
     };
@@ -1362,17 +1371,75 @@
     if (S.running) {
       S.bg = null; S.lastShotSig = null; S.armed = true; S.stillSince = 0;
       S.hist = []; S.pass = null; S.learnUntil = Date.now() + 1000;
+      S.iv = { last: 0, group: null, busy: 0 };
       this.textContent = '■ 停止'; this.classList.add('stop');
       setState(cfg.mode === 'flow' ? '枠の中のふだんの様子を覚えています…' : '空の台を覚えています…（範囲の中を空にしてください）', 'warn');
       beep();   // iPadでは、ボタンを押したときに一度鳴らしておかないと音が出ない
       if (navigator.wakeLock) navigator.wakeLock.request('screen').then(function(w) { S.wake = w; }, function() {});
     } else {
+      if (cfg.mode === 'interval') ivFinish();
       this.textContent = runLabel(); this.classList.remove('stop');
       setState('停止中');
       if (S.wake) { S.wake.release(); S.wake = null; }
     }
   };
   $('btnShot').onclick = function() { shoot(); };
+  $('sIv').oninput = function() { cfg.intervalSec = Number(this.value); store.set('intervalSec', cfg.intervalSec); showCfg(); };
+
+  // ---------- 一定の間隔で撮る（容器ごとに自動でまとめて判定） ----------
+  // 撮るたびに1枚ずつ速読（安いモデル）し、続けて同じ番号に読めた写真を1本の容器にまとめる。
+  // 番号が変わった（次の容器が来た）か、その番号が12秒読めなくなったら、その容器を判定する:
+  // 2枚以上が同じ番号・同じWで、W検算が合い、確からしさが低くない → 確定（追加の費用なし）。それ以外 → まとめた写真（最大3枚）を精読。
+  // 刻印が写っていない写真は捨てる。読めない桁（?）がある読みは、ほかの桁が合えば同じ容器とみなす
+  S.iv = { last: 0, group: null, busy: 0 };
+  const IV_GROUP_GAP_MS = 12000;
+  function numMatch(a, b) {
+    if (!a || !b || a.length !== b.length) return false;
+    let known = 0;
+    for (let i = 0; i < a.length; i++) { if (a[i] === '?' || b[i] === '?') continue; if (a[i] !== b[i]) return false; known++; }
+    return known >= 3;
+  }
+  function ivTick() {
+    if (!S.running || cfg.mode !== 'interval') return;
+    const now = Date.now();
+    if (S.iv.group && now - S.iv.group.lastT > IV_GROUP_GAP_MS) ivFinish();
+    if (now - S.iv.last < cfg.intervalSec * 1000) return;
+    S.iv.last = now;
+    const v = $('video'); if (!v.videoWidth) return;
+    const c = document.createElement('canvas'), at = new Date();
+    drawOut(v, c, { x: 0, y: 0, w: 1, h: 1 });
+    flash();
+    saveCanvas(c, at).then(function() {
+      setState('一定の間隔で撮影中（' + S.passes + ' 本・' + S.shots.length + ' 枚）', 'ok');
+      if (!cfg.live) return;
+      const img = jpegOf(c, 1568, 0.88).split(',')[1];
+      S.iv.busy++;
+      apiPost({ tier: 'fast', images: [img], device: devId, shotAt: at.toISOString() }).then(function(o) {
+        const r = o && o.ok ? o.read || {} : {};
+        if (r.framing) onFraming(r.framing);
+        camLog('速読', null, (r.readable ? '' : '読めない ') + (r.symbol || '') + ' ' + (r.number || '') + (r.tare_kg ? ' W' + r.tare_kg : '') + (r.framing ? '［' + r.framing + '］' : ''));
+        if (!o || !o.ok || r.framing === 'no_stamp' || !/\d{3}/.test(String(r.number || '').replace(/\?/g, ''))) return;
+        const shot = { c: c, at: at, img: img, orig: c.__orig || '', r: r };
+        const g = S.iv.group;
+        if (g && numMatch(g.key, r.number)) { g.shots.push(shot); g.lastT = Date.now(); if (r.number.indexOf('?') < 0) g.key = r.number; }
+        else { if (g) ivFinish(); S.iv.group = { key: r.number, shots: [shot], lastT: Date.now() }; }
+      }).catch(function() { /* 次の写真で */ }).then(function() { S.iv.busy--; });
+    });
+  }
+  setInterval(ivTick, 250);
+  function ivFinish() {
+    const g = S.iv.group; S.iv.group = null;
+    if (!g || !g.shots.length) return;
+    S.passes++;
+    const shots = g.shots.slice(0, 6);
+    // 速読の読みを送り、読み取り口で「確定」か「精読」かを決める。精読にはくっきりした（確からしさの高い）順に3枚
+    const rank = { high: 3, medium: 2, low: 1 };
+    const pick = shots.slice().sort(function(a, b) { return (rank[b.r.confidence] || 0) - (rank[a.r.confidence] || 0); }).slice(0, 3)
+      .sort(function(a, b) { return a.at - b.at; });
+    camLog('まとめ', null, shots.length + '枚を1本に（' + shots.map(function(x) { return x.r.number; }).join(' / ') + '）');
+    liveRead(pick.map(function(x) { return { c: x.c, at: x.at, t: x.at.getTime() }; }), { fastReads: shots.map(function(x) { return x.r; }) });
+  }
+  window.__aikcDebug.ivState = function() { return S.iv; };
 
   // ---------- 写真に保存 ----------
   $('btnSave').onclick = function() {
@@ -1403,7 +1470,7 @@
   window.addEventListener('beforeunload', function(e) { if (S.shots.length) { e.preventDefault(); e.returnValue = ''; } });
 
   // ---------- 設定 ----------
-  function runLabel() { return cfg.mode === 'flow' ? '▶ 開始（枠に刻印がないときに押す）' : '▶ 開始（台を空にして押す）'; }
+  function runLabel() { return cfg.mode === 'interval' ? '▶ 開始（' + cfg.intervalSec + '秒ごとに撮る）' : cfg.mode === 'flow' ? '▶ 開始（枠に刻印がないときに押す）' : '▶ 開始（台を空にして押す）'; }
   function showCfg() {
     Array.prototype.forEach.call(document.querySelectorAll('input[name=mode]'), function(r) { r.checked = r.value === cfg.mode; });
     Array.prototype.forEach.call(document.querySelectorAll('input[name=cropMode]'), function(r) { r.checked = r.value === cfg.cropMode; });
@@ -1412,6 +1479,8 @@
     if ($('sRot')) { const d = (cfg.zone.rot || 0) * 180 / Math.PI; $('sRot').value = d.toFixed(1); $('vRot').textContent = d.toFixed(1) + '°'; }
     layoutZone();
     $('stillBox').classList.toggle('hidden', cfg.mode !== 'stop');
+    $('ivBox').classList.toggle('hidden', cfg.mode !== 'interval');
+    $('sIv').value = cfg.intervalSec; $('vIv').textContent = cfg.intervalSec + ' 秒';
     $('zone').querySelector('.lbl').textContent = cfg.mode === 'flow' ? '刻印の型: ' + cfg.kind : '検知範囲';
     $('sKind').value = cfg.kind;
     drawTemplate();

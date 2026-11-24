@@ -341,6 +341,36 @@ function check(name, ok, detail) {
   check('読みやすく加工（既定）: 保存した写真は白黒（凹凸の強調）で、画面全体の大きさ', gray[0] <= 6 && gray[1] === 1280 && gray[2] === 720, JSON.stringify(gray));
   await sp.close();
 
+  // ---- 一定の間隔で撮る: 1枚ずつ速読 → 同じ番号を1本にまとめ → 揃えば確定（精読なし）、番号が変わったら次の容器
+  const ip = await browser.newPage({ viewport: { width: 1180, height: 820 } });
+  ip.on('pageerror', e => check('ページでJSエラーなし(間隔)', false, e.message));
+  const ivReqs = []; let ivNum = '16510';
+  await ip.route('https://script.google.com/**', route => {
+    const b = JSON.parse(route.request().postData() || '{}'); ivReqs.push(b);
+    const r = { readable: true, symbol: 'HXR', number: ivNum, tare_kg: '16.5', w_check: 'OK', confidence: 'high', framing: 'ok' };
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(b.tier === 'fast' ? { ok: true, read: r } : { ok: true, id: b.id, read: Object.assign({}, r, { number: b.fastReads ? b.fastReads[0].number : r.number, sure: true }) }) });
+  });
+  await ip.addInitScript(() => {
+    localStorage.setItem('aikc.mode', '"interval"'); localStorage.setItem('aikc.intervalSec', '1');
+    localStorage.setItem('aikc.live', 'true'); localStorage.setItem('aikc.apiToken', '"aikotoba"');
+    const cv = document.createElement('canvas'); cv.width = 640; cv.height = 360;
+    setInterval(() => { const g = cv.getContext('2d'); g.fillStyle = '#ccc'; g.fillRect(0, 0, 640, 360); }, 33);
+    Object.defineProperty(navigator, 'mediaDevices', { value: { getUserMedia: () => Promise.resolve(cv.captureStream(30)) } });
+  });
+  await ip.goto('file://' + path.join(__dirname, '..', 'docs', 'camera', 'index.html'));
+  await ip.waitForTimeout(800);
+  check('間隔: 開始ボタンに間隔が出る', (await ip.textContent('#btnRun')).includes('1秒ごと'), await ip.textContent('#btnRun'));
+  await ip.click('#btnRun'); await ip.waitForTimeout(3300);
+  ivNum = '16511'; await ip.waitForTimeout(2300);
+  const fast = ivReqs.filter(b => b.tier === 'fast').length, groups = ivReqs.filter(b => b.fastReads);
+  check('間隔: 1枚ずつ速読し、番号が変わったら前の容器（同じ番号の写真）を1本にまとめて送る',
+    fast >= 4 && groups.length === 1 && groups[0].fastReads.length >= 2 && groups[0].fastReads.every(r => r.number === '16510') && groups[0].images.length >= 2,
+    fast + ' ' + JSON.stringify(groups.map(g => g.fastReads.map(r => r.number))));
+  await ip.waitForTimeout(500);
+  const ivr = await ip.$$eval('#reads .rd', els => els.map(e => e.textContent));
+  check('間隔: まとめた1本の結果を画面に出す', ivr.some(t => t.includes('16510') && t.includes('確定')), JSON.stringify(ivr));
+  await ip.close();
+
   await browser.close();
   const failed = results.filter(r => !r).length;
   console.log('\n' + (results.length - failed) + ' / ' + results.length + ' PASS（カメラ）');
