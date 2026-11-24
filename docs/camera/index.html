@@ -1193,6 +1193,11 @@
       lastRead = o.read || null;
       if (!o.ok) { item.state = 'ng'; item.tag = 'エラー'; item.text = o.error || '読めませんでした'; return; }
       const r = o.read || {};
+      // 刻印が写っていなかった（容器のあいだなどを撮った）ときは、画面に出さず本数にも数えない
+      if (!r.readable && r.framing === 'no_stamp') {
+        item.empty = true; S.reads = S.reads.filter(function(x) { return x !== item; }); S.passes = Math.max(0, S.passes - 1); updateCount();
+        item.tag = '空振り'; item.text = r.note || '刻印が写っていない'; return;
+      }
       if (!r.readable) { item.state = 'ng'; item.tag = '読めない'; item.text = r.note || '刻印が読めませんでした'; return; }
       item.text = (r.symbol ? r.symbol + ' ' : '') + r.number + (r.tare_kg ? '　W' + r.tare_kg + (r.w_from_seal ? '（シール）' : '') : '　W?');
       item.state = r.sure ? 'ok' : 'warn'; item.tag = r.sure ? '確定' : '要確認';

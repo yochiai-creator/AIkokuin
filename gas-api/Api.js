@@ -53,6 +53,8 @@ function doPost(e) {
     }
     r.sure = sureRead_(r);
     r.how = how; r.cost_usd = cost; r.ms = Date.now() - started;
+    // 容器の刻印が写っていない写真（容器と容器のあいだ・床・人など）は、記録も写真の保存もしない（時間と画面を取らない）
+    if (!r.readable && r.framing === 'no_stamp') return json_({ ok: true, id: id, read: r, empty: true });
     let photos = '';
     try { photos = savePhotos_(id, images, req.originals || []); } catch (e) { photos = '保存できません: ' + e.message; }
     appendCamera_(id, r, req, photos);
