@@ -7,7 +7,7 @@
 
 const KOKUIN_SHEET = '刻印記録';
 // 指示（KOKUIN_SYSTEM・スキーマ・学習の足し方）を変えたら上げる。読み取りログに残し、変える前と後の正答率を比べる
-const KOKUIN_PROMPT_VERSION = 'p21';
+const KOKUIN_PROMPT_VERSION = 'p22';
 const KOKUIN_HEADERS = ['記録日時', 'ロットID', '容器番号', '読取 記号', '読取 番号', '内容積V(L)', '質量W(kg)',
   '耐圧試験圧力TP(MPa)', '製造年月', 'その他の刻印', '確からしさ', '入力のしかた', '入力者', '端末', 'Googleアカウント', 'モデル', '備考',
   '総重量シール(kg)', 'W検算', '容器種別（読取）', '刻印の年月（そのまま）', 'キャップのグループNo', 'グループNo照合'];
@@ -80,6 +80,8 @@ const KOKUIN_SYSTEM = [
   '・1/7/4: 7は上部に横棒、4は縦横の交差がある、1はどちらもない。暗部・反射で横棒が消えると1に見える。',
   '・6/9: 6は尾が輪の内側、9は尾が輪の下に垂れる。0/9: 9には下に尾がある。2/3/5: 3は二段の丸み、2は一段のカーブ、5は上部横棒。',
   '・中央の桁（3・4桁目）と末尾の桁は反射で最も誤読しやすい。迷った桁があれば confidence を medium 以下にして note に書く。',
+  '・容器番号は必ず5桁。番号の1桁目は記号のすぐ右で、取っ手の溶接跡（丸い跡）やロープの影に重なりやすい。細い「1」は見落としたり「7」と読んだりしやすい（現場で 16338→76338、16345→?9345 と読み違えた）。',
+  '  見えた数字が4桁しかないときは、1桁目が隠れているとして ?（例 ?6345）にする。数字を左へずらして5桁を作らない。1桁目が「7」に見えたら上の横棒が本当にあるか確かめる。',
   '',
   '【W値の検算】刻印W ＋ 0.5kg ＝ 総重量シールの値（差はバルブ分）。',
   '・シールが読めたら seal_kg に入れる。Wとシールが合わなければ、Wか番号の誤読を疑い confidence を low にする。',
@@ -316,15 +318,31 @@ function learnedNotes_() {
   let text = '';
   try {
     const sh = getSpreadsheet_().getSheetByName(LEARN_SHEET);
-    if (sh && sh.getLastRow() >= 2) {
-      const n = Math.min(300, sh.getLastRow() - 1);
-      const rows = sh.getRange(sh.getLastRow() - n + 1, 1, n, LEARN_HEADERS.length).getValues();
+    {
+      const n = sh ? Math.min(300, sh.getLastRow() - 1) : 0;
+      const rows = n > 0 ? sh.getRange(sh.getLastRow() - n + 1, 1, n, LEARN_HEADERS.length).getValues() : [];
       const count = {}; let ok = 0, ng = 0;
       rows.forEach(function(r) {
         if (r[1] === '一致') { ok++; return; }
         ng++;
         String(r[9] || '').split(' / ').filter(String).forEach(function(d) { count[d] = (count[d] || 0) + 1; });
       });
+      // カメラ読み取りの「正解の番号」（後から写真を見て書いたもの）も同じように数える
+      try {
+        const cs = getSpreadsheet_().getSheetByName('カメラ読み取り');
+        if (cs && cs.getLastRow() >= 2 && cs.getLastColumn() >= 28) {
+          const k = Math.min(300, cs.getLastRow() - 1);
+          cs.getRange(cs.getLastRow() - k + 1, 1, k, 28).getValues().forEach(function(r) {
+            const fixNum = String(r[26] || '').replace(/^'/, '');
+            if (!/^\d{5}$/.test(fixNum)) return;
+            const d = learnDiffs_({ symbol: r[3], number: String(r[4]).replace(/^'/, ''), w: r[5] }, { symbol: r[25], number: fixNum, w: r[27] });
+            const aiNum = String(r[4]).replace(/^'/, '');
+            if (!d.length && aiNum.indexOf('?') >= 0) { ng++; count['番号の1桁が隠れて読めなかった'] = (count['番号の1桁が隠れて読めなかった'] || 0) + 1; return; }
+            if (!d.length) { ok++; return; }
+            ng++; d.forEach(function(x) { count[x] = (count[x] || 0) + 1; });
+          });
+        }
+      } catch (e) { /* 学習データだけで作る */ }
       const top = Object.keys(count).sort(function(x, y) { return count[y] - count[x]; }).slice(0, 8);
       if (top.length) {
         text = 'この現場で最近あった読み違い（人が直したもの。AIの読み→正しい字。同じ字形が出たら特に注意して見分けること。ただし写真に見える文字を優先する）:\n' +

@@ -33,7 +33,9 @@ function doPost(e) {
     // まず速読（安いモデルで、同じ容器の写真をまとめて）。決めきれなければ精読（高精度のモデル）
     const id = String(req.id || Utilities.getUuid());
     const log = { session: String(req.device || '').slice(0, 30), how: 'camera', label: id };
-    const hints = lotHints_();   // 登録済みロットの記号・番号の範囲（読みの手がかり。写真に見える文字を優先させる）
+    // 登録済みロットの範囲は既定では渡さない（ロットと違う容器を流したとき、範囲に引っぱられて先頭の桁を0と読みかけた: 2026-11-24）。
+    // スクリプトプロパティ USE_LOT_HINTS=on で渡す
+    const hints = PropertiesService.getScriptProperties().getProperty('USE_LOT_HINTS') === 'on' ? lotHints_() : [];
     let r = readKokuin({ images: images, tier: 'fast', log: log, hints: hints }), cost = r.cost_usd || 0, how = '速読 ' + images.length + '枚';
     // 速読で「刻印が写っていない」と分かったものは精読しない（容器のないものを撮ったときの費用と時間を省く: 精読は速読の約40倍）
     if (!sureRead_(r) && !(r.framing === 'no_stamp' && !r.readable)) {
