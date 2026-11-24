@@ -37,8 +37,11 @@
   #guide { position: absolute; left: 10px; right: 10px; top: calc(env(safe-area-inset-top) + 64px); font-size: 17px; font-weight: 800; color: #1b1b1b;
     background: rgba(255,211,77,.95); border-radius: 10px; padding: 8px 12px; pointer-events: none; }
   #reads { position: absolute; left: 10px; right: 10px; bottom: 22px; display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
-  #reads .rd { display: flex; align-items: center; gap: 8px; background: rgba(17,24,39,.85); border-radius: 8px; padding: 4px 8px; font-size: 16px; font-weight: 700; color: #fff; }
-  #reads .rd img { height: 36px; border-radius: 4px; }
+  #reads .rd { display: flex; align-items: center; gap: 6px; background: rgba(17,24,39,.75); border-radius: 8px; padding: 2px 6px; font-size: 14px; font-weight: 700; color: #fff; }
+  #reads .rd img { height: 26px; border-radius: 3px; }
+  /* 読み取り結果は1行だけ（長い理由は省く）・新しい2本だけ。画面を隠さない */
+  #reads .rd span:not(.tag) { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #guide { font-size: 14px !important; padding: 4px 10px !important; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #reads .rd .tag { margin-left: auto; font-size: 13px; padding: 2px 8px; border-radius: 6px; background: #4b5563; white-space: nowrap; }
   #reads .rd.ok .tag { background: #1e7a4c; } #reads .rd.warn .tag { background: #b07a00; } #reads .rd.ng .tag { background: #b94a3d; }
   #state { position: absolute; left: 10px; top: calc(env(safe-area-inset-top) + 10px); right: 10px; font-size: 18px; font-weight: 800;
@@ -1231,6 +1234,9 @@
     camLog('写り', null, fr + '：' + msg);
   }
   window.__aikcDebug.onFraming = onFraming;
+  // 黄色い案内は8秒で消す（出たままだと画面が見えない）
+  new MutationObserver(function() { if (!$('guide').classList.contains('hidden')) S.guideAt = Date.now(); }).observe($('guide'), { attributes: true, childList: true, characterData: true, subtree: true });
+  setInterval(function() { if (S.guideAt && Date.now() - S.guideAt > 8000) { $('guide').classList.add('hidden'); S.guideAt = 0; } }, 1000);
   // 写真の向き: AIが「時計回りに何度回せば正しい向きか」を返す。同じ答え（0以外）が2本続いたら、以後の写真をその分回して保存する
   // （iPhone を横に持って画面の向きが固定されていると、写真が横倒しになる: 2026-11-24）。答えは回したあとの写真に対するもの
   // ※既定ではしない（手持ちで向きが変わると、90°→270° と回しすぎて 0° に戻ったり、逆さまにしたりした: 2026-11-24。AIは横倒しでも読める）。⚙ autoRotate=true で使う
@@ -1256,11 +1262,12 @@
   }
 
   function showReads() {
-    $('reads').innerHTML = S.reads.slice(0, 4).map(function(it) {
+    $('reads').innerHTML = S.reads.slice(0, 2).map(function(it) {
       return '<div class="rd ' + it.state + '"><img src="' + it.thumb + '" alt=""><span>' + it.text.replace(/[<>&]/g, '') + '</span><span class="tag">' + it.tag + '</span></div>';
     }).join('');
   }
   window.__aikcDebug.reads = function() { return S.reads; };
+  window.__aikcDebug.showReads = function() { showReads(); };
 
   // ---------- 読みやすく加工する ----------
   // 刻印は白い塗装に打った淡い凹み。白黒にして、まわり（ぼかした画像）との明るさの差を3倍に強め、
