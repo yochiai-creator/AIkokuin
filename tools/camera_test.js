@@ -282,7 +282,7 @@ function check(name, ok, detail) {
       body: JSON.stringify(b.ping ? { ok: b.token === 'aikotoba' } : { ok: true, id: b.id, read: { readable: true, symbol: 'HXR', number: '15378', tare_kg: '16.5', sure: apiReqs.length >= 2, framing: 'too_small', upright: '90' } }) });
   });
   await sp.addInitScript(() => {
-    localStorage.setItem('aikc.live', 'true'); localStorage.setItem('aikc.apiToken', '"aikotoba"');
+    localStorage.setItem('aikc.live', 'true'); localStorage.setItem('aikc.apiToken', '"aikotoba"'); localStorage.setItem('aikc.autoRotate', 'true');
     // ズームを外から変えられるカメラのふり
     MediaStreamTrack.prototype.getCapabilities = function() { return { zoom: { min: 1, max: 5, step: 0.1 } }; };
     MediaStreamTrack.prototype.applyConstraints = function(c) { window.__zoomSet = c && c.advanced && c.advanced[0] && c.advanced[0].zoom; return Promise.resolve(); };

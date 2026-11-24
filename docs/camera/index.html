@@ -1213,13 +1213,15 @@
   window.__aikcDebug.onFraming = onFraming;
   // 写真の向き: AIが「時計回りに何度回せば正しい向きか」を返す。同じ答え（0以外）が2本続いたら、以後の写真をその分回して保存する
   // （iPhone を横に持って画面の向きが固定されていると、写真が横倒しになる: 2026-11-24）。答えは回したあとの写真に対するもの
-  S.rot90 = store.get('rot90', 0); S.ups = [];
+  // ※既定ではしない（手持ちで向きが変わると、90°→270° と回しすぎて 0° に戻ったり、逆さまにしたりした: 2026-11-24。AIは横倒しでも読める）。⚙ autoRotate=true で使う
+  S.rot90 = store.get('autoRotate', false) ? store.get('rot90', 0) : 0; S.ups = [];
   function onUpright(u) {
+    if (!store.get('autoRotate', false)) return;
     if (u === undefined || u === null || u === '') return;
     S.ups.push(u); if (S.ups.length > 2) S.ups.shift();
     if (u === '0' || S.ups.length < 2 || S.ups[0] !== S.ups[1]) return;
     S.rot90 = (S.rot90 + Number(u)) % 360; store.set('rot90', S.rot90); S.ups = [];
-    const g = $('guide'), m = '🔄 写真が横倒しだったので、これから ' + S.rot90 + '° 回して保存します';
+    const g = $('guide'), m = S.rot90 ? '🔄 写真が横倒しだったので、これから ' + S.rot90 + '° 回して保存します' : '🔄 写真の向きが戻ったので、回さずに保存します';
     g.textContent = g.classList.contains('hidden') ? m : g.textContent + '　' + m; g.classList.remove('hidden');
     camLog('向き', null, '時計回りに ' + S.rot90 + '° 回して保存');
   }
